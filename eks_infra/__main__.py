@@ -181,92 +181,92 @@ for i, policy_arn in enumerate(managed_node_policy_arns):
         policy_arn=policy_arn)
 
 
-# --- WAF (Web Application Firewall) with Let's Encrypt Exception ---
-web_acl = aws.wafv2.WebAcl(f"{project_name}-web-acl",
-    name=f"{project_name}-web-acl",
-    scope="REGIONAL",
-    default_action=aws.wafv2.WebAclDefaultActionArgs(allow={}),
-    visibility_config=aws.wafv2.WebAclVisibilityConfigArgs(
-        cloudwatch_metrics_enabled=True,
-        metric_name=f"{project_name}-web-acl-metrics",
-        sampled_requests_enabled=True,
-    ),
-    rules=[
-        # ==============================================================================
-        # === NEW RULE: Allow Let's Encrypt HTTP-01 challenge requests                 ===
-        # === This rule has the highest priority (0) to ensure it's evaluated first. ===
-        # ==============================================================================
-        aws.wafv2.WebAclRuleArgs(
-            name="Allow-LetsEncrypt-Challenge",
-            priority=0, # Highest priority
-            action=aws.wafv2.WebAclRuleActionArgs(
-                allow=aws.wafv2.WebAclRuleActionAllowArgs() # Allow the request
-            ),
-            statement=aws.wafv2.WebAclRuleStatementArgs(
-                byte_match_statement=aws.wafv2.WebAclRuleStatementByteMatchStatementArgs(
-                    # Look in the URI path of the request
-                    field_to_match=aws.wafv2.WebAclRuleStatementByteMatchStatementFieldToMatchArgs(
-                        uri_path=aws.wafv2.WebAclRuleStatementByteMatchStatementFieldToMatchUriPathArgs()
-                    ),
-                    # Match if the URI starts with this string
-                    search_string="/.well-known/acme-challenge/",
-                    positional_constraint="STARTS_WITH",
-                    text_transformations=[
-                        aws.wafv2.WebAclRuleStatementByteMatchStatementTextTransformationArgs(
-                            priority=0,
-                            type="NONE" # No transformation needed
-                        )
-                    ]
-                )
-            ),
-            visibility_config=aws.wafv2.WebAclVisibilityConfigArgs(
-                cloudwatch_metrics_enabled=True,
-                metric_name="allow-letsencrypt",
-                sampled_requests_enabled=True,
-            ),
-        ),
-        # ==============================================================================
-        # === Existing WAF Rules (Priorities are now shifted down by one)            ===
-        # ==============================================================================
-        # aws.wafv2.WebAclRuleArgs(
-        #     name="AWS-Managed-Rules-Common-Rule-Set",
-        #     priority=1, # Original priority was 1, stays the same relative to other block rules
-        #     override_action=aws.wafv2.WebAclRuleOverrideActionArgs(
-        #         none=aws.wafv2.WebAclRuleOverrideActionNoneArgs()
-        #     ),
-        #     statement=aws.wafv2.WebAclRuleStatementArgs(
-        #         managed_rule_group_statement=aws.wafv2.WebAclRuleStatementManagedRuleGroupStatementArgs(
-        #             vendor_name="AWS",
-        #             name="AWSManagedRulesCommonRuleSet",
-        #         )
-        #     ),
-        #     visibility_config=aws.wafv2.WebAclVisibilityConfigArgs(
-        #         cloudwatch_metrics_enabled=True,
-        #         metric_name="aws-managed-common-rules",
-        #         sampled_requests_enabled=True,
-        #     ),
-        # ),
-        # aws.wafv2.WebAclRuleArgs(
-        #     name="AWS-Managed-Rules-Amazon-Ip-Reputation-List",
-        #     priority=2, # Original priority was 2
-        #     override_action=aws.wafv2.WebAclRuleOverrideActionArgs(
-        #         none=aws.wafv2.WebAclRuleOverrideActionNoneArgs()
-        #     ),
-        #     statement=aws.wafv2.WebAclRuleStatementArgs(
-        #         managed_rule_group_statement=aws.wafv2.WebAclRuleStatementManagedRuleGroupStatementArgs(
-        #             vendor_name="AWS",
-        #             name="AWSManagedRulesAmazonIpReputationList",
-        #         )
-        #     ),
-        #     visibility_config=aws.wafv2.WebAclVisibilityConfigArgs(
-        #         cloudwatch_metrics_enabled=True,
-        #         metric_name="aws-managed-ip-reputation",
-        #         sampled_requests_enabled=True,
-        #     ),
-        # ),
-    ],
-    tags=create_common_tags("waf-acl")
-)
+# # --- WAF (Web Application Firewall) with Let's Encrypt Exception ---
+# web_acl = aws.wafv2.WebAcl(f"{project_name}-web-acl",
+#     name=f"{project_name}-web-acl",
+#     scope="REGIONAL",
+#     default_action=aws.wafv2.WebAclDefaultActionArgs(allow={}),
+#     visibility_config=aws.wafv2.WebAclVisibilityConfigArgs(
+#         cloudwatch_metrics_enabled=True,
+#         metric_name=f"{project_name}-web-acl-metrics",
+#         sampled_requests_enabled=True,
+#     ),
+#     rules=[
+#         # ==============================================================================
+#         # === NEW RULE: Allow Let's Encrypt HTTP-01 challenge requests                 ===
+#         # === This rule has the highest priority (0) to ensure it's evaluated first. ===
+#         # ==============================================================================
+#         aws.wafv2.WebAclRuleArgs(
+#             name="Allow-LetsEncrypt-Challenge",
+#             priority=0, # Highest priority
+#             action=aws.wafv2.WebAclRuleActionArgs(
+#                 allow=aws.wafv2.WebAclRuleActionAllowArgs() # Allow the request
+#             ),
+#             statement=aws.wafv2.WebAclRuleStatementArgs(
+#                 byte_match_statement=aws.wafv2.WebAclRuleStatementByteMatchStatementArgs(
+#                     # Look in the URI path of the request
+#                     field_to_match=aws.wafv2.WebAclRuleStatementByteMatchStatementFieldToMatchArgs(
+#                         uri_path=aws.wafv2.WebAclRuleStatementByteMatchStatementFieldToMatchUriPathArgs()
+#                     ),
+#                     # Match if the URI starts with this string
+#                     search_string="/.well-known/acme-challenge/",
+#                     positional_constraint="STARTS_WITH",
+#                     text_transformations=[
+#                         aws.wafv2.WebAclRuleStatementByteMatchStatementTextTransformationArgs(
+#                             priority=0,
+#                             type="NONE" # No transformation needed
+#                         )
+#                     ]
+#                 )
+#             ),
+#             visibility_config=aws.wafv2.WebAclVisibilityConfigArgs(
+#                 cloudwatch_metrics_enabled=True,
+#                 metric_name="allow-letsencrypt",
+#                 sampled_requests_enabled=True,
+#             ),
+#         ),
+#         # ==============================================================================
+#         # === Existing WAF Rules (Priorities are now shifted down by one)            ===
+#         # ==============================================================================
+#         # aws.wafv2.WebAclRuleArgs(
+#         #     name="AWS-Managed-Rules-Common-Rule-Set",
+#         #     priority=1, # Original priority was 1, stays the same relative to other block rules
+#         #     override_action=aws.wafv2.WebAclRuleOverrideActionArgs(
+#         #         none=aws.wafv2.WebAclRuleOverrideActionNoneArgs()
+#         #     ),
+#         #     statement=aws.wafv2.WebAclRuleStatementArgs(
+#         #         managed_rule_group_statement=aws.wafv2.WebAclRuleStatementManagedRuleGroupStatementArgs(
+#         #             vendor_name="AWS",
+#         #             name="AWSManagedRulesCommonRuleSet",
+#         #         )
+#         #     ),
+#         #     visibility_config=aws.wafv2.WebAclVisibilityConfigArgs(
+#         #         cloudwatch_metrics_enabled=True,
+#         #         metric_name="aws-managed-common-rules",
+#         #         sampled_requests_enabled=True,
+#         #     ),
+#         # ),
+#         # aws.wafv2.WebAclRuleArgs(
+#         #     name="AWS-Managed-Rules-Amazon-Ip-Reputation-List",
+#         #     priority=2, # Original priority was 2
+#         #     override_action=aws.wafv2.WebAclRuleOverrideActionArgs(
+#         #         none=aws.wafv2.WebAclRuleOverrideActionNoneArgs()
+#         #     ),
+#         #     statement=aws.wafv2.WebAclRuleStatementArgs(
+#         #         managed_rule_group_statement=aws.wafv2.WebAclRuleStatementManagedRuleGroupStatementArgs(
+#         #             vendor_name="AWS",
+#         #             name="AWSManagedRulesAmazonIpReputationList",
+#         #         )
+#         #     ),
+#         #     visibility_config=aws.wafv2.WebAclVisibilityConfigArgs(
+#         #         cloudwatch_metrics_enabled=True,
+#         #         metric_name="aws-managed-ip-reputation",
+#         #         sampled_requests_enabled=True,
+#         #     ),
+#         # ),
+#     ],
+#     tags=create_common_tags("waf-acl")
+# )
 
 
 
@@ -302,135 +302,135 @@ k8s_provider = k8s.Provider(f"{project_name}-k8s-provider", kubeconfig=kubeconfi
 
 
 
-# ==============================================================================
-# --- 4. CERT-MANAGER (Certificate Management) ---
-# ==============================================================================
+# # ==============================================================================
+# # --- 4. CERT-MANAGER (Certificate Management) ---
+# # ==============================================================================
 
-cert_manager_namespace = k8s.core.v1.Namespace("cert-manager-ns",
-    metadata={
-        "name": "cert-manager",
-        "labels": {
-            # This label is for an older EKS Pod Identity system and is not required for IRSA.
-            # It's harmless to keep but can be removed.
-            "eks.amazonaws.com/pod-identity-webhook-enabled": "true"
-        }
-    },
-    opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
+# cert_manager_namespace = k8s.core.v1.Namespace("cert-manager-ns",
+#     metadata={
+#         "name": "cert-manager",
+#         "labels": {
+#             # This label is for an older EKS Pod Identity system and is not required for IRSA.
+#             # It's harmless to keep but can be removed.
+#             "eks.amazonaws.com/pod-identity-webhook-enabled": "true"
+#         }
+#     },
+#     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
 
-# --- IAM for Cert-Manager ---
+# # --- IAM for Cert-Manager ---
 
-cert_manager_sa_name = f"{project_name}-cert-manager"
-cert_manager_role_name = f"{project_name}-cert-manager-irsa-role"
+# cert_manager_sa_name = f"{project_name}-cert-manager"
+# cert_manager_role_name = f"{project_name}-cert-manager-irsa-role"
 
-# Manually construct the ARN to break the circular dependency for the permissions policy.
-aws_account_id = eks_cluster.core.oidc_provider.arn.apply(lambda arn: arn.split(':')[4])
-cert_manager_role_arn = pulumi.Output.concat("arn:aws:iam::", aws_account_id, ":role/", cert_manager_role_name)
+# # Manually construct the ARN to break the circular dependency for the permissions policy.
+# aws_account_id = eks_cluster.core.oidc_provider.arn.apply(lambda arn: arn.split(':')[4])
+# cert_manager_role_arn = pulumi.Output.concat("arn:aws:iam::", aws_account_id, ":role/", cert_manager_role_name)
 
-# Define a single, consolidated permissions policy for cert-manager.
-cert_manager_iam_policy = aws.iam.Policy(f"{project_name}-cert-manager-policy",
-    name=f"{project_name}-CertManagerRoute53Policy",
-    policy=pulumi.Output.all(
-        hosted_zone_id=route53_hosted_zone_id,
-        role_arn=cert_manager_role_arn
-    ).apply(lambda args: json.dumps({
-        "Version": "2012-10-17",
-        "Statement": [
-            # Standard Route53 permissions for DNS-01 challenge
-            {
-                "Effect": "Allow",
-                "Action": ["route53:GetChange"],
-                "Resource": "arn:aws:route53:::change/*"
-            },
-            {
-                "Effect": "Allow",
-                "Action": ["route53:ChangeResourceRecordSets", "route53:ListResourceRecordSets"],
-                "Resource": f"arn:aws:route53:::hostedzone/{args['hosted_zone_id']}"
-            },
-            # Permission to discover the correct delegated hosted zone
-            {
-                "Effect": "Allow",
-                "Action": ["route53:ListHostedZones", "route53:ListHostedZonesByName"],
-                "Resource": "*"
-            },
-            # THE FINAL FIX: Permissions for the solver to get role info and assume itself
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "iam:GetRole",
-                    "sts:AssumeRole"
-                ],
-                "Resource": args['role_arn']
-            }
-        ]
-    }))
-)
+# # Define a single, consolidated permissions policy for cert-manager.
+# cert_manager_iam_policy = aws.iam.Policy(f"{project_name}-cert-manager-policy",
+#     name=f"{project_name}-CertManagerRoute53Policy",
+#     policy=pulumi.Output.all(
+#         hosted_zone_id=route53_hosted_zone_id,
+#         role_arn=cert_manager_role_arn
+#     ).apply(lambda args: json.dumps({
+#         "Version": "2012-10-17",
+#         "Statement": [
+#             # Standard Route53 permissions for DNS-01 challenge
+#             {
+#                 "Effect": "Allow",
+#                 "Action": ["route53:GetChange"],
+#                 "Resource": "arn:aws:route53:::change/*"
+#             },
+#             {
+#                 "Effect": "Allow",
+#                 "Action": ["route53:ChangeResourceRecordSets", "route53:ListResourceRecordSets"],
+#                 "Resource": f"arn:aws:route53:::hostedzone/{args['hosted_zone_id']}"
+#             },
+#             # Permission to discover the correct delegated hosted zone
+#             {
+#                 "Effect": "Allow",
+#                 "Action": ["route53:ListHostedZones", "route53:ListHostedZonesByName"],
+#                 "Resource": "*"
+#             },
+#             # THE FINAL FIX: Permissions for the solver to get role info and assume itself
+#             {
+#                 "Effect": "Allow",
+#                 "Action": [
+#                     "iam:GetRole",
+#                     "sts:AssumeRole"
+#                 ],
+#                 "Resource": args['role_arn']
+#             }
+#         ]
+#     }))
+# )
 
-# Create the IAM Role with the standard IRSA Trust Policy.
-cert_manager_irsa_role = aws.iam.Role(f"{project_name}-cert-manager-irsa-role",
-    name=cert_manager_role_name,
-    assume_role_policy=pulumi.Output.all(
-        oidc_provider_arn=eks_cluster.core.oidc_provider.arn,
-        oidc_provider_url=eks_cluster.core.oidc_provider.url
-    ).apply(
-        lambda args: json.dumps({
-            "Version": "2012-10-17",
-            "Statement": [{
-                "Effect": "Allow",
-                "Principal": {"Federated": args["oidc_provider_arn"]},
-                "Action": "sts:AssumeRoleWithWebIdentity",
-                "Condition": {
-                    "StringEquals": {
-                        f"{args['oidc_provider_url'].replace('https://', '')}:sub": f"system:serviceaccount:cert-manager:{cert_manager_sa_name}"
-                    }
-                }
-            }]
-        })
-    ),
-    tags=create_common_tags("cert-manager-irsa-role"),
-    opts=pulumi.ResourceOptions(depends_on=[eks_cluster.core.oidc_provider])
-)
+# # Create the IAM Role with the standard IRSA Trust Policy.
+# cert_manager_irsa_role = aws.iam.Role(f"{project_name}-cert-manager-irsa-role",
+#     name=cert_manager_role_name,
+#     assume_role_policy=pulumi.Output.all(
+#         oidc_provider_arn=eks_cluster.core.oidc_provider.arn,
+#         oidc_provider_url=eks_cluster.core.oidc_provider.url
+#     ).apply(
+#         lambda args: json.dumps({
+#             "Version": "2012-10-17",
+#             "Statement": [{
+#                 "Effect": "Allow",
+#                 "Principal": {"Federated": args["oidc_provider_arn"]},
+#                 "Action": "sts:AssumeRoleWithWebIdentity",
+#                 "Condition": {
+#                     "StringEquals": {
+#                         f"{args['oidc_provider_url'].replace('https://', '')}:sub": f"system:serviceaccount:cert-manager:{cert_manager_sa_name}"
+#                     }
+#                 }
+#             }]
+#         })
+#     ),
+#     tags=create_common_tags("cert-manager-irsa-role"),
+#     opts=pulumi.ResourceOptions(depends_on=[eks_cluster.core.oidc_provider])
+# )
 
-# Attach the single, complete policy to the role.
-aws.iam.RolePolicyAttachment(f"{project_name}-cert-manager-irsa-policy-attachment",
-    role=cert_manager_irsa_role.name,
-    policy_arn=cert_manager_iam_policy.arn
-)
+# # Attach the single, complete policy to the role.
+# aws.iam.RolePolicyAttachment(f"{project_name}-cert-manager-irsa-policy-attachment",
+#     role=cert_manager_irsa_role.name,
+#     policy_arn=cert_manager_iam_policy.arn
+# )
 
-# --- Helm Chart for cert-manager ---
+# # --- Helm Chart for cert-manager ---
 
-public_dns_resolvers = [
-    "8.8.8.8:53",
-    "8.8.4.4:53",
-    "1.1.1.1:53"
-]
+# public_dns_resolvers = [
+#     "8.8.8.8:53",
+#     "8.8.4.4:53",
+#     "1.1.1.1:53"
+# ]
 
-cert_manager_chart = Chart(cert_manager_sa_name,
-    ChartOpts(
-        chart="cert-manager",
-        version=eks_cert_manager_version,
-        fetch_opts=FetchOpts(repo="https://charts.jetstack.io"),
-        namespace=cert_manager_namespace.metadata["name"],
-        values={
-            "installCRDs": True,
-            "prometheus": {"enabled": False},
-            "serviceAccount": {
-                "create": True,
-                "name": cert_manager_sa_name,
-                "annotations": {
-                    "eks.amazonaws.com/role-arn": cert_manager_irsa_role.arn
-                }
-            },
-            "extraArgs": [
-                "--dns01-recursive-nameservers-only=true",
-                f"--dns01-recursive-nameservers={','.join(public_dns_resolvers)}"
-            ]
-        }
-    ),
-    opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[
-        cert_manager_irsa_role,
-        cert_manager_iam_policy # Explicit dependency on the policy
-    ])
-)
+# cert_manager_chart = Chart(cert_manager_sa_name,
+#     ChartOpts(
+#         chart="cert-manager",
+#         version=eks_cert_manager_version,
+#         fetch_opts=FetchOpts(repo="https://charts.jetstack.io"),
+#         namespace=cert_manager_namespace.metadata["name"],
+#         values={
+#             "installCRDs": True,
+#             "prometheus": {"enabled": False},
+#             "serviceAccount": {
+#                 "create": True,
+#                 "name": cert_manager_sa_name,
+#                 "annotations": {
+#                     "eks.amazonaws.com/role-arn": cert_manager_irsa_role.arn
+#                 }
+#             },
+#             "extraArgs": [
+#                 "--dns01-recursive-nameservers-only=true",
+#                 f"--dns01-recursive-nameservers={','.join(public_dns_resolvers)}"
+#             ]
+#         }
+#     ),
+#     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[
+#         cert_manager_irsa_role,
+#         cert_manager_iam_policy # Explicit dependency on the policy
+#     ])
+# )
 
 
 
@@ -726,7 +726,7 @@ aws_load_balancer_controller_chart = Chart(f"{project_name}-lbc-chart",
                 # ]
             }
         }
-    ), opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[lbc_irsa_role, ebs_csi_driver_addon, cert_manager_chart]))
+    ), opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[lbc_irsa_role, ebs_csi_driver_addon]))
 
 # kubectl apply -k "github.com/aws/eks-charts/stable/aws-load-balancer-controller/crds?ref=master"
 # kubectl apply -f aws-lbc-crds.yaml
@@ -792,35 +792,35 @@ aws.iam.RolePolicyAttachment(f"{project_name}-external-dns-irsa-policy-attachmen
 )
 
 
-# Get the existing kube-system namespace to avoid creation conflicts
-kube_system_ns = k8s.core.v1.Namespace.get("kube-system", "kube-system", opts=pulumi.ResourceOptions(provider=k8s_provider))
+# # Get the existing kube-system namespace to avoid creation conflicts
+# kube_system_ns = k8s.core.v1.Namespace.get("kube-system", "kube-system", opts=pulumi.ResourceOptions(provider=k8s_provider))
 
-# 3. Helm Chart for ExternalDNS
-external_dns_chart = Chart("external-dns",
-    ChartOpts(
-        chart="external-dns",
-        version="1.17.0", # Use a recent, stable version
-        fetch_opts=FetchOpts(repo="https://kubernetes-sigs.github.io/external-dns/"),
-        namespace=kube_system_ns.metadata["name"],
-        values={
-            "serviceAccount": {
-                "create": True,
-                "name": external_dns_sa_name,
-                "annotations": {
-                    "eks.amazonaws.com/role-arn": external_dns_irsa_role.arn
-                }
-            },
-            "provider": "aws",
-            "policy": "sync", # This ensures records are deleted when the Ingress is deleted
-            "aws": {
-                "region": aws_region
-            },
-            # IMPORTANT: This prevents ExternalDNS from touching domains it shouldn't
-            "domainFilters": ["api.mmh-global.com"],
-            # IMPORTANT: This creates a TXT record to identify records managed by this instance
-            "txtOwnerId": route53_hosted_zone_id
-        }
-    ), opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[external_dns_irsa_role, aws_load_balancer_controller_chart]))
+# # 3. Helm Chart for ExternalDNS
+# external_dns_chart = Chart("external-dns",
+#     ChartOpts(
+#         chart="external-dns",
+#         version="1.17.0", # Use a recent, stable version
+#         fetch_opts=FetchOpts(repo="https://kubernetes-sigs.github.io/external-dns/"),
+#         namespace=kube_system_ns.metadata["name"],
+#         values={
+#             "serviceAccount": {
+#                 "create": True,
+#                 "name": external_dns_sa_name,
+#                 "annotations": {
+#                     "eks.amazonaws.com/role-arn": external_dns_irsa_role.arn
+#                 }
+#             },
+#             "provider": "aws",
+#             "policy": "sync", # This ensures records are deleted when the Ingress is deleted
+#             "aws": {
+#                 "region": aws_region
+#             },
+#             # IMPORTANT: This prevents ExternalDNS from touching domains it shouldn't
+#             "domainFilters": ["api.mmh-global.com"],
+#             # IMPORTANT: This creates a TXT record to identify records managed by this instance
+#             "txtOwnerId": route53_hosted_zone_id
+#         }
+#     ), opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[external_dns_irsa_role, aws_load_balancer_controller_chart]))
 
 
 
@@ -1058,219 +1058,219 @@ cluster_autoscaler_chart = Chart(f"{project_name}-cluster-autoscaler",
 
 
 
-# 5. Velero
-velero_s3_bucket = aws.s3.BucketV2(f"{project_name}-velero-backups",
-    bucket=velero_s3_bucket_name,
-    tags=create_common_tags("velero-backups"))
+# # 5. Velero
+# velero_s3_bucket = aws.s3.BucketV2(f"{project_name}-velero-backups",
+#     bucket=velero_s3_bucket_name,
+#     tags=create_common_tags("velero-backups"))
 
-aws.s3.BucketPublicAccessBlock(f"{project_name}-velero-backups-public-access",
-    bucket=velero_s3_bucket.id,
-    block_public_acls=True,
-    block_public_policy=True,
-    ignore_public_acls=True,
-    restrict_public_buckets=True)
+# aws.s3.BucketPublicAccessBlock(f"{project_name}-velero-backups-public-access",
+#     bucket=velero_s3_bucket.id,
+#     block_public_acls=True,
+#     block_public_policy=True,
+#     ignore_public_acls=True,
+#     restrict_public_buckets=True)
 
-velero_iam_user = aws.iam.User(f"{project_name}-velero-user", name=f"{project_name}-velero")
+# velero_iam_user = aws.iam.User(f"{project_name}-velero-user", name=f"{project_name}-velero")
 
-velero_policy_json = pulumi.Output.all(bucket_name=velero_s3_bucket.bucket).apply(lambda args: json.dumps({
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ec2:DescribeVolumes", "ec2:DescribeSnapshots", "ec2:CreateTags",
-                "ec2:CreateVolume", "ec2:CreateSnapshot", "ec2:DeleteSnapshot"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Effect": "Allow",
-            "Action": [
-                "s3:GetObject", "s3:DeleteObject", "s3:PutObject",
-                "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"
-            ],
-            "Resource": [f"arn:aws:s3:::{args['bucket_name']}/*"]
-        },
-        {
-            "Effect": "Allow",
-            "Action": ["s3:ListBucket"],
-            "Resource": [f"arn:aws:s3:::{args['bucket_name']}"]
-        }
-    ]
-}))
+# velero_policy_json = pulumi.Output.all(bucket_name=velero_s3_bucket.bucket).apply(lambda args: json.dumps({
+#     "Version": "2012-10-17",
+#     "Statement": [
+#         {
+#             "Effect": "Allow",
+#             "Action": [
+#                 "ec2:DescribeVolumes", "ec2:DescribeSnapshots", "ec2:CreateTags",
+#                 "ec2:CreateVolume", "ec2:CreateSnapshot", "ec2:DeleteSnapshot"
+#             ],
+#             "Resource": "*"
+#         },
+#         {
+#             "Effect": "Allow",
+#             "Action": [
+#                 "s3:GetObject", "s3:DeleteObject", "s3:PutObject",
+#                 "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"
+#             ],
+#             "Resource": [f"arn:aws:s3:::{args['bucket_name']}/*"]
+#         },
+#         {
+#             "Effect": "Allow",
+#             "Action": ["s3:ListBucket"],
+#             "Resource": [f"arn:aws:s3:::{args['bucket_name']}"]
+#         }
+#     ]
+# }))
 
-velero_iam_policy = aws.iam.Policy(f"{project_name}-velero-policy",
-    name=f"{project_name}-VeleroBackupPolicy",
-    policy=velero_policy_json)
+# velero_iam_policy = aws.iam.Policy(f"{project_name}-velero-policy",
+#     name=f"{project_name}-VeleroBackupPolicy",
+#     policy=velero_policy_json)
 
-aws.iam.UserPolicyAttachment(f"{project_name}-velero-user-policy-attachment",
-    user=velero_iam_user.name,
-    policy_arn=velero_iam_policy.arn)
+# aws.iam.UserPolicyAttachment(f"{project_name}-velero-user-policy-attachment",
+#     user=velero_iam_user.name,
+#     policy_arn=velero_iam_policy.arn)
 
-velero_access_key = aws.iam.AccessKey(f"{project_name}-velero-access-key", user=velero_iam_user.name)
+# velero_access_key = aws.iam.AccessKey(f"{project_name}-velero-access-key", user=velero_iam_user.name)
 
-# velero_credentials_file_content = pulumi.Output.all(
-#     key_id=velero_access_key.id,
-#     secret_key=velero_access_key.secret
-# ).apply(lambda args: f"[default]\naws_access_key_id={args['key_id']}\naws_secret_access_key={args['secret_key']}")
+# # velero_credentials_file_content = pulumi.Output.all(
+# #     key_id=velero_access_key.id,
+# #     secret_key=velero_access_key.secret
+# # ).apply(lambda args: f"[default]\naws_access_key_id={args['key_id']}\naws_secret_access_key={args['secret_key']}")
 
-velero_namespace = k8s.core.v1.Namespace("velero-ns",
-    metadata={"name": "velero"},
-    opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
+# velero_namespace = k8s.core.v1.Namespace("velero-ns",
+#     metadata={"name": "velero"},
+#     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
 
-velero_secret = k8s.core.v1.Secret(
-    "velero-cloud-credentials",
-    metadata=k8s.meta.v1.ObjectMetaArgs(
-        name="cloud-credentials",
-        namespace=velero_namespace.metadata["name"],
-    ),
-    # THE FIX: Use pulumi.Output.all() to get both id and secret together.
-    string_data={
-        "cloud": pulumi.Output.all(
-            id=velero_access_key.id,
-            secret=velero_access_key.secret
-        ).apply(
-            lambda args: f"[default]\naws_access_key_id={args['id']}\naws_secret_access_key={args['secret']}"
-        )
-    },
-    type="Opaque",
-    opts=pulumi.ResourceOptions(
-        provider=k8s_provider,
-        depends_on=[velero_namespace, velero_access_key],
-        protect=eks_velero_protect
-    )
-)
+# velero_secret = k8s.core.v1.Secret(
+#     "velero-cloud-credentials",
+#     metadata=k8s.meta.v1.ObjectMetaArgs(
+#         name="cloud-credentials",
+#         namespace=velero_namespace.metadata["name"],
+#     ),
+#     # THE FIX: Use pulumi.Output.all() to get both id and secret together.
+#     string_data={
+#         "cloud": pulumi.Output.all(
+#             id=velero_access_key.id,
+#             secret=velero_access_key.secret
+#         ).apply(
+#             lambda args: f"[default]\naws_access_key_id={args['id']}\naws_secret_access_key={args['secret']}"
+#         )
+#     },
+#     type="Opaque",
+#     opts=pulumi.ResourceOptions(
+#         provider=k8s_provider,
+#         depends_on=[velero_namespace, velero_access_key],
+#         protect=eks_velero_protect
+#     )
+# )
 
-velero_chart = Chart(f"{project_name}-velero-chart",
-    ChartOpts(
-        chart="velero",
-        version=eks_velero_version,
-        fetch_opts=FetchOpts(repo="https://vmware-tanzu.github.io/helm-charts"),
-        namespace=velero_namespace.metadata["name"],
-        values={
-             "configuration": {
-                "backupStorageLocation": [{
-                    "name": "default",
-                    "provider": "aws",
-                    "bucket": velero_s3_bucket.bucket,
-                    "config": {
-                        "region": aws_region
-                    }
-                }],
-                "volumeSnapshotLocation": [{
-                    "name": "default",
-                    "provider": "aws",
-                    "config": {
-                        "region": aws_region
-                    }
-                }]
-            },
-            "credentials": {
-                "useSecret": True,
-                # The name of the k8s.core.v1.Secret resource we created earlier
-                "existingSecret": velero_secret.metadata["name"]
-            },
-            "snapshotsEnabled": True,
-            # The `extraPlugins` key is not standard. Plugins are added via initContainers.
-            # This is the correct way to install the AWS plugin.
-            "initContainers": [
-                {
-                    "name": "velero-plugin-for-aws",
-                    "image": "velero/velero-plugin-for-aws:v1.9.0", # Use a recent, compatible version
-                    "imagePullPolicy": "IfNotPresent",
-                    "volumeMounts": [{"mountPath": "/target", "name": "plugins"}],
-                }
-            ],
-            "metrics": {
-                "enabled": False
-            },
-            # This can be set to false as it is not needed for most backup/restore cases
-            # and is the source of the webhook error.
-            "deployNodeAgent": True,
-        }
-    ),     
-    opts=pulumi.ResourceOptions(
-        provider=k8s_provider,
-        # --- FIX 2: Add explicit dependency on the LBC chart ---
-        # This ensures the Velero chart waits until the LBC webhook is fully ready.
-        depends_on=[
-            velero_secret,
-            gp3_storage_class,
-            # aws_load_balancer_controller_chart # <-- This is the crucial addition for the webhook error
-        ]
-    )
-)
-
-
+# velero_chart = Chart(f"{project_name}-velero-chart",
+#     ChartOpts(
+#         chart="velero",
+#         version=eks_velero_version,
+#         fetch_opts=FetchOpts(repo="https://vmware-tanzu.github.io/helm-charts"),
+#         namespace=velero_namespace.metadata["name"],
+#         values={
+#              "configuration": {
+#                 "backupStorageLocation": [{
+#                     "name": "default",
+#                     "provider": "aws",
+#                     "bucket": velero_s3_bucket.bucket,
+#                     "config": {
+#                         "region": aws_region
+#                     }
+#                 }],
+#                 "volumeSnapshotLocation": [{
+#                     "name": "default",
+#                     "provider": "aws",
+#                     "config": {
+#                         "region": aws_region
+#                     }
+#                 }]
+#             },
+#             "credentials": {
+#                 "useSecret": True,
+#                 # The name of the k8s.core.v1.Secret resource we created earlier
+#                 "existingSecret": velero_secret.metadata["name"]
+#             },
+#             "snapshotsEnabled": True,
+#             # The `extraPlugins` key is not standard. Plugins are added via initContainers.
+#             # This is the correct way to install the AWS plugin.
+#             "initContainers": [
+#                 {
+#                     "name": "velero-plugin-for-aws",
+#                     "image": "velero/velero-plugin-for-aws:v1.9.0", # Use a recent, compatible version
+#                     "imagePullPolicy": "IfNotPresent",
+#                     "volumeMounts": [{"mountPath": "/target", "name": "plugins"}],
+#                 }
+#             ],
+#             "metrics": {
+#                 "enabled": False
+#             },
+#             # This can be set to false as it is not needed for most backup/restore cases
+#             # and is the source of the webhook error.
+#             "deployNodeAgent": True,
+#         }
+#     ),     
+#     opts=pulumi.ResourceOptions(
+#         provider=k8s_provider,
+#         # --- FIX 2: Add explicit dependency on the LBC chart ---
+#         # This ensures the Velero chart waits until the LBC webhook is fully ready.
+#         depends_on=[
+#             velero_secret,
+#             gp3_storage_class,
+#             # aws_load_balancer_controller_chart # <-- This is the crucial addition for the webhook error
+#         ]
+#     )
+# )
 
 
 
 
 
-# ----- [START] REPLACE THE MONITORING BLOCK WITH THIS SIMPLIFIED VERSION -----
-alert_email_address = config.get("alert_email_address") or "donaldhp.loo@mmh-global.com"
 
-# --- Monitoring and Alerting Setup (Infrastructure Only) ---
-# This code only creates the AWS resources (SNS, Alarms). The Kubernetes
-# agents will be deployed separately using kubectl.
 
-# 1. Create an SNS Topic for sending email alerts.
-alerting_sns_topic = aws.sns.Topic(f"{project_name}-alerts-topic",
-    display_name="EKS Cluster Alerts",
-    tags=create_common_tags("sns-alerts-topic")
-)
+# # ----- [START] REPLACE THE MONITORING BLOCK WITH THIS SIMPLIFIED VERSION -----
+# alert_email_address = config.get("alert_email_address") or "donaldhp.loo@mmh-global.com"
 
-# 2. Create an SNS Topic Subscription to send alerts to your email.
-#    IMPORTANT: You must confirm the subscription email from AWS.
-email_address_for_alerts = alert_email_address
-email_subscription = aws.sns.TopicSubscription(f"{project_name}-email-subscription",
-    topic=alerting_sns_topic.arn,
-    protocol="email",
-    endpoint=email_address_for_alerts
-)
+# # --- Monitoring and Alerting Setup (Infrastructure Only) ---
+# # This code only creates the AWS resources (SNS, Alarms). The Kubernetes
+# # agents will be deployed separately using kubectl.
 
-# --- Define CloudWatch Alarms ---
-# These alarms watch for metrics from Container Insights. They will remain in an
-# "Insufficient data" state until you deploy the agents via kubectl. This is expected.
+# # 1. Create an SNS Topic for sending email alerts.
+# alerting_sns_topic = aws.sns.Topic(f"{project_name}-alerts-topic",
+#     display_name="EKS Cluster Alerts",
+#     tags=create_common_tags("sns-alerts-topic")
+# )
 
-# Alarm for High Node CPU Utilization
-node_cpu_alarm = aws.cloudwatch.MetricAlarm(f"{project_name}-node-cpu-high",
-    name=f"{project_name}-EKSNodeCPUUtilizationHigh",
-    alarm_description="Alert when EKS node CPU utilization exceeds 80%",
-    alarm_actions=[alerting_sns_topic.arn],
-    metric_name="node_cpu_utilization",
-    namespace="ContainerInsights",
-    dimensions={"ClusterName": eks_cluster.eks_cluster.name}, # Pulumi correctly provides the cluster name here
-    comparison_operator="GreaterThanOrEqualToThreshold",
-    threshold=80, statistic="Average", period=300, evaluation_periods=2,
-    treat_missing_data="notBreaching", tags=create_common_tags("alarm-node-cpu")
-)
+# # 2. Create an SNS Topic Subscription to send alerts to your email.
+# #    IMPORTANT: You must confirm the subscription email from AWS.
+# email_address_for_alerts = alert_email_address
+# email_subscription = aws.sns.TopicSubscription(f"{project_name}-email-subscription",
+#     topic=alerting_sns_topic.arn,
+#     protocol="email",
+#     endpoint=email_address_for_alerts
+# )
 
-# Alarm for High Node Memory Utilization
-node_memory_alarm = aws.cloudwatch.MetricAlarm(f"{project_name}-node-memory-high",
-    name=f"{project_name}-EKSNodeMemoryUtilizationHigh",
-    alarm_description="Alert when EKS node memory utilization exceeds 85%",
-    alarm_actions=[alerting_sns_topic.arn],
-    metric_name="node_memory_utilization",
-    namespace="ContainerInsights",
-    dimensions={"ClusterName": eks_cluster.eks_cluster.name},
-    comparison_operator="GreaterThanOrEqualToThreshold",
-    threshold=85, statistic="Average", period=300, evaluation_periods=2,
-    treat_missing_data="notBreaching", tags=create_common_tags("alarm-node-memory")
-)
+# # --- Define CloudWatch Alarms ---
+# # These alarms watch for metrics from Container Insights. They will remain in an
+# # "Insufficient data" state until you deploy the agents via kubectl. This is expected.
 
-# Alarm for Low Node Disk Space
-node_disk_alarm = aws.cloudwatch.MetricAlarm(f"{project_name}-node-disk-full",
-    name=f"{project_name}-EKSNodeDiskSpaceLow",
-    alarm_description="Alert when EKS node disk space utilization exceeds 80%",
-    alarm_actions=[alerting_sns_topic.arn],
-    metric_name="node_filesystem_utilization",
-    namespace="ContainerInsights",
-    dimensions={"ClusterName": eks_cluster.eks_cluster.name},
-    comparison_operator="GreaterThanOrEqualToThreshold",
-    threshold=80, statistic="Average", period=300, evaluation_periods=1,
-    treat_missing_data="notBreaching", tags=create_common_tags("alarm-node-disk")
-)
+# # Alarm for High Node CPU Utilization
+# node_cpu_alarm = aws.cloudwatch.MetricAlarm(f"{project_name}-node-cpu-high",
+#     name=f"{project_name}-EKSNodeCPUUtilizationHigh",
+#     alarm_description="Alert when EKS node CPU utilization exceeds 80%",
+#     alarm_actions=[alerting_sns_topic.arn],
+#     metric_name="node_cpu_utilization",
+#     namespace="ContainerInsights",
+#     dimensions={"ClusterName": eks_cluster.eks_cluster.name}, # Pulumi correctly provides the cluster name here
+#     comparison_operator="GreaterThanOrEqualToThreshold",
+#     threshold=80, statistic="Average", period=300, evaluation_periods=2,
+#     treat_missing_data="notBreaching", tags=create_common_tags("alarm-node-cpu")
+# )
+
+# # Alarm for High Node Memory Utilization
+# node_memory_alarm = aws.cloudwatch.MetricAlarm(f"{project_name}-node-memory-high",
+#     name=f"{project_name}-EKSNodeMemoryUtilizationHigh",
+#     alarm_description="Alert when EKS node memory utilization exceeds 85%",
+#     alarm_actions=[alerting_sns_topic.arn],
+#     metric_name="node_memory_utilization",
+#     namespace="ContainerInsights",
+#     dimensions={"ClusterName": eks_cluster.eks_cluster.name},
+#     comparison_operator="GreaterThanOrEqualToThreshold",
+#     threshold=85, statistic="Average", period=300, evaluation_periods=2,
+#     treat_missing_data="notBreaching", tags=create_common_tags("alarm-node-memory")
+# )
+
+# # Alarm for Low Node Disk Space
+# node_disk_alarm = aws.cloudwatch.MetricAlarm(f"{project_name}-node-disk-full",
+#     name=f"{project_name}-EKSNodeDiskSpaceLow",
+#     alarm_description="Alert when EKS node disk space utilization exceeds 80%",
+#     alarm_actions=[alerting_sns_topic.arn],
+#     metric_name="node_filesystem_utilization",
+#     namespace="ContainerInsights",
+#     dimensions={"ClusterName": eks_cluster.eks_cluster.name},
+#     comparison_operator="GreaterThanOrEqualToThreshold",
+#     threshold=80, statistic="Average", period=300, evaluation_periods=1,
+#     treat_missing_data="notBreaching", tags=create_common_tags("alarm-node-disk")
+# )
 
 # ----- [END] REPLACEMENT BLOCK -----
 
@@ -1283,7 +1283,7 @@ pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
 if db_subnets_ids:
     pulumi.export("db_subnet_ids", db_subnets_ids)
 
-pulumi.export("waf_acl_arn", web_acl.arn)
+# pulumi.export("waf_acl_arn", web_acl.arn)
 
 pulumi.export("eks_cluster_name_pulumi_logical", eks_cluster.name)
 pulumi.export("eks_cluster_resource_name_aws", eks_cluster.eks_cluster.name)
@@ -1294,7 +1294,7 @@ pulumi.export("eks_oidc_provider_url", eks_cluster.core.oidc_provider.url.apply(
 pulumi.export("eks_oidc_provider_arn", eks_cluster.core.oidc_provider.arn.apply(lambda arn: arn if arn else "OIDC_PROVIDER_NOT_YET_AVAILABLE"))
 pulumi.export("efs_filesystem_id", efs_file_system.id)
 
-pulumi.export("velero_s3_bucket_name_actual", velero_s3_bucket.bucket)
-pulumi.export("velero_iam_user_name", velero_iam_user.name)
-pulumi.export("velero_access_key_id", velero_access_key.id)
-pulumi.export("velero_secret_access_key", pulumi.Output.secret(velero_access_key.secret))
+# pulumi.export("velero_s3_bucket_name_actual", velero_s3_bucket.bucket)
+# pulumi.export("velero_iam_user_name", velero_iam_user.name)
+# pulumi.export("velero_access_key_id", velero_access_key.id)
+# pulumi.export("velero_secret_access_key", pulumi.Output.secret(velero_access_key.secret))
