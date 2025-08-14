@@ -154,7 +154,7 @@ metadata:
     # This defines the type of traffic the ALB will listen for
     alb.ingress.kubernetes.io/target-type: ip
     # Associates our AWS WAF WebACL with the Application Load Balancer.
-    alb.ingress.kubernetes.io/wafv2-acl-arn: "arn:aws:wafv2:ap-southeast-1:806342426990:regional/webacl/eks-mmh-sg-web-acl/be062b91-ea1e-4fc0-91d0-1470464a3fcd"
+    # alb.ingress.kubernetes.io/wafv2-acl-arn: "arn:aws:wafv2:ap-southeast-1:806342426990:regional/webacl/eks-mmh-sg-web-acl/be062b91-ea1e-4fc0-91d0-1470464a3fcd"
 
     # Use the Let's Encrypt staging issuer first for testing
     # cert-manager.io/cluster-issuer: letsencrypt-staging
@@ -180,7 +180,7 @@ spec:
       # secretName: chatai-mmh-global-com-tls # cert-manager will create this secret for us
   rules:
     # - host: k8s-chatai-openwebu-dfd767cdbf-1006398550.ap-southeast-1.elb.amazonaws.com
-    - host: chatai.api.mmh-global.com # The hostname for the Ingress
+    - host: chatai.app.mmh-global.com # The hostname for the Ingress
       http:
         paths:
           - path: /
