@@ -1,0 +1,27 @@
+apiVersion: v1
+data:
+  mapRoles: |
+    - rolearn: arn:aws:iam::806342426990:role/eks-mmh-sg-eks-node-role-2389da9
+      username: system:node:{{EC2PrivateDNSName}}
+      groups:
+        - system:bootstrappers
+        - system:nodes
+    - rolearn: arn:aws:iam::806342426990:role/aws-reserved/sso.amazonaws.com/ap-southeast-1/AWSReservedSSO_EKSCustomPermissions_8d909bcddae0978b
+      username: mmh-it-software-group
+      groups:
+        - system:masters
+  mapUsers: |
+    - userarn: arn:aws:iam::806342426990:role/aws-reserved/sso.amazonaws.com/ap-southeast-1/AWSReservedSSO_EKSCustomPermissions_8d909bcddae0978b
+      username: mmh-it-software-group
+      groups:
+        - eks-console-dashboard-access group
+immutable: false
+kind: ConfigMap
+metadata:
+  annotations:
+    pulumi.com/patchForce: "true"
+  creationTimestamp: "2025-07-05T05:56:28Z"
+  name: aws-auth
+  namespace: kube-system
+  resourceVersion: "7501319"
+  uid: 1557d15b-84e1-42c3-8a91-98bbe6ed2f7e

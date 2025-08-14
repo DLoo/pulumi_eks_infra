@@ -1,0 +1,11 @@
+name: eks_infra
+description: MMH AWS EKS infrastructure provision
+runtime:
+  name: python
+  options:
+    toolchain: uv
+    virtualenv: ../.venv
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: aws-python

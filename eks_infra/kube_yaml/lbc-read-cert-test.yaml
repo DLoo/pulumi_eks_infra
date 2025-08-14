@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lbc-secret-read-test-pod
+  namespace: kube-system # <-- IMPORTANT: Must be in the same namespace as the SA
+spec:
+  # Use the LBC's own service account to inherit its permissions
+  serviceAccountName: aws-load-balancer-controller
+  containers:
+  - name: kubectl
+    # An image that has kubectl available
+    image: bitnami/kubectl:latest
+    # Keep the pod running so we can exec into it
+    command: ["/bin/sh", "-c", "sleep 3600"]
+  # Do not restart the pod if it fails
+  restartPolicy: Never

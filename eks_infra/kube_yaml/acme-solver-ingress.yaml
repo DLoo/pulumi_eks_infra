@@ -1,0 +1,35 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: acme-http01-solver-ingress
+  namespace: genai
+  annotations:
+    # --- This is the key annotation ---
+    "alb.ingress.kubernetes.io/group.name": "chatai-web-app"
+    # Give this rule a high priority (lower number) so it's checked first.
+    "alb.ingress.kubernetes.io/group.order": "1"
+    # Ensure the ALB created for this Ingress is internet-facing.
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    # This WAF rule should allow the challenge. Your main WAF also needs this.
+    # "alb.ingress.kubernetes.io/wafv2-acl-arn": "arn:aws:wafv2:..." # Your WAF ARN
+    alb.ingress.kubernetes.io/wafv2-acl-arn: "arn:aws:wafv2:ap-southeast-1:806342426990:regional/webacl/eks-mmh-sg-web-acl/be062b91-ea1e-4fc0-91d0-1470464a3fcd"
+
+spec:
+  # Use a special, dedicated IngressClass name for the solver.
+  # This isolates it from your main application's Ingress traffic.
+  ingressClassName: acme-solver
+  rules:
+  # This rule is a placeholder. Cert-manager will add/remove specific paths here.
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            # This is a dummy backend. The request will never reach it because
+            # cert-manager's temporary rule will have higher priority.
+            name: some-dummy-service
+            port:
+              number: 80
+

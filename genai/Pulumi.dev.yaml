@@ -1,0 +1,28 @@
+config:
+  aws:region: ap-southeast-1 # Or your desired region
+  genai:project_name: genai
+  genai:bedrock_default_model: "anthropic.claude-3-sonnet-20240229-v1:0"
+  # OpenWebUI RDS Config
+  genai:db_name_webui: openwebuidb
+  genai:db_username_webui: webuiadmin
+  genai:db_password_webui:
+    secure: AAABABhYr/qpE/cSBlecS1JobatwRjVjV70DY2MzgcqeyB2E1Q+EVrPD # Use `pulumi config set --secret genai:db_password_webui`
+  genai:db_aurora_pg_engine_version_webui: "16.6" # Optional, defaults in code
+  genai:db_serverless_min_acu_webui: "0.5" # Optional
+  genai:db_serverless_max_acu_webui: "1" # Optional
+  # N8N RDS Config
+  genai:db_name_n8n: n8ndb
+  genai:db_username_n8n: n8nadmin
+  genai:db_password_n8n:
+    secure: AAABAHFd23/G3wGRZdrwBYB3Xqtbr8T1gm8Caf3TKnKSgWJCJrlafQfj # Use `pulumi config set --secret genai:db_password_n8n`  done8212ok
+  # genai:n8n_path_prefix: "/n8n" # New: N8N Path Prefix
+  genai:db_aurora_pg_engine_version_n8n: "16.6" # Optional
+  genai:db_serverless_min_acu_n8n: "0.5" # Optional
+  genai:db_serverless_max_acu_n8n: "1" # Optional (can be different)
+  # genai:db_master_password:
+  #   secure: AAABAG8K45Xqt3fywbF23QsO4Tgfx3nVPex3IJ5ESSJ2xszyi0MovesE
+
+  # pgAdmin Config
+  genai:pgadmin_default_email: donaldhp.loo@mmh-global.com # REPLACE
+  genai:pgadmin_default_password:
+    secure: AAABAOyxXBWwrSLTH/LsRp6gZB0J07ZpwTarQoPlIi3wVUkntGarIsJA # Use `pulumi config set --secret genai:pgadmin_default_password`  None@8212!

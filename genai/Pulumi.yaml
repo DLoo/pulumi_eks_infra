@@ -1,0 +1,11 @@
+name: genai
+description: OpenWebUI and Bedrock
+runtime:
+  name: python
+  options:
+    virtualenv: ../.venv
+    toolchain: uv
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: aws-python

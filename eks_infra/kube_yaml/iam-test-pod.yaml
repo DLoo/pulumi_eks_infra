@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iam-test-pod
+  namespace: cert-manager # <-- IMPORTANT: Must be in the same namespace
+spec:
+  # Use the exact same service account as cert-manager
+  serviceAccountName: eks-mmh-sg-cert-manager # <-- CHECK THIS NAME
+  containers:
+  - name: aws-cli
+    # Use an image that has aws-cli and common tools
+    image: amazon/aws-cli:latest
+    # Keep the pod running so we can exec into it
+    command: ["/bin/sh", "-c", "sleep 3600"]
+  # Do not restart the pod if it fails
+  restartPolicy: Never

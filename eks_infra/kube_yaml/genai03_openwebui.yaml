@@ -1,0 +1,193 @@
+# genai.yaml
+# ---
+
+---
+# 4. A simple web server Deployment that uses both volumes
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: open-webui
+  namespace: genai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open-webui
+  template:
+    metadata:
+      labels:
+        app: open-webui
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c']
+          args:
+          - |
+            echo "Waiting for PostgreSQL to be ready..."
+            until nc -zv postgres-0.postgres-svc.genai.svc.cluster.local 5432; do
+              echo "PostgreSQL not ready yet, sleeping for 5s..."
+              sleep 5
+            done
+            echo "PostgreSQL is ready!"
+          env:
+          - name: PG_USER
+            valueFrom:
+              secretKeyRef:
+                name: postgres-credentials
+                key: POSTGRES_USER
+          - name: PG_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: postgres-credentials
+                key: POSTGRES_PASSWORD
+          - name: PG_DB
+            valueFrom:
+              secretKeyRef:
+                name: postgres-credentials
+                key: POSTGRES_DB
+
+      containers:
+        - name: open-webui
+          image: ghcr.io/open-webui/open-webui:main # A simple image that shows hostname
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Construct and export DATABASE_URL using shell expansion
+              export DATABASE_URL="postgresql://${PG_USER}:${PG_PASSWORD}@postgres-0.postgres-svc.genai.svc.cluster.local:5432/${PG_DB}"
+              
+              # Log the constructed URL (mask password in a real production log if desired)
+              echo "Attempting to start Open WebUI with DATABASE_URL: postgresql://${PG_USER}:********@postgres-0.postgres-svc.genai.svc.cluster.local:5432/${PG_DB}"
+              
+              # Execute the original Open WebUI command (from its Dockerfile CMD)
+              exec uvicorn open_webui.main:app --host 0.0.0.0 --port 8080 --forwarded-allow-ips='*'
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: WEBUI_SECRET_KEY
+              value: "FhYLFE6NKta80GaJcgeswcrHeZnpi2nDw7+rsd8ElJs="
+            - name: WEBUI_URL
+              value: "http://chatai.mmh-global.com" # This is the path we defined in the Ingress
+            # - name: DATABASE_URL
+            #   value: "postgresql://$(PG_USER):$(PG_PASSWORD)@postgres-0.postgres-svc.genai.svc.cluster.local:5432/$(PG_DB)"
+            - name: PG_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: PG_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+          # volumeMounts:
+          #   # - name: ebs-storage # Mount the EBS volume
+          #   #   mountPath: /data/ebs
+          #   - name: efs-storage # Mount the EFS volume
+          #     mountPath: /app/backend/data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: 1500m
+              memory: 4Gi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 90
+            periodSeconds: 5
+            successThreshold: 1
+      # volumes:
+      #   # - name: ebs-storage
+      #   #   persistentVolumeClaim:
+      #   #     claimName: ebs-claim # Link to the EBS PVC
+      #   - name: efs-storage
+      #     persistentVolumeClaim:
+      #       claimName: efs-claim # Link to the EFS PVC
+
+---
+# 5. A Service to expose the Deployment inside the cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: open-webui-svc
+  namespace: genai
+spec:
+  selector:
+    app: open-webui
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+
+---
+# 6. An Ingress to expose the Service to the internet via an AWS ALB
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: open-webui-ingress
+  namespace: genai
+  annotations:
+    # This tells Kubernetes to use the AWS Load Balancer Controller
+    # kubernetes.io/ingress.class: alb
+    # alb.ingress.kubernetes.io/group.name: "mmh-sg-iha-alb" 
+    # Give this rule a lower priority so the ACME rule is checked first.
+    # "alb.ingress.kubernetes.io/group.order": "10"
+    # This defines the scheme of the load balancer
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    # This defines the type of traffic the ALB will listen for
+    alb.ingress.kubernetes.io/target-type: ip
+    # Associates our AWS WAF WebACL with the Application Load Balancer.
+    alb.ingress.kubernetes.io/wafv2-acl-arn: "arn:aws:wafv2:ap-southeast-1:806342426990:regional/webacl/eks-mmh-sg-web-acl/be062b91-ea1e-4fc0-91d0-1470464a3fcd"
+
+    # Use the Let's Encrypt staging issuer first for testing
+    # cert-manager.io/cluster-issuer: letsencrypt-staging
+    # For production, you'll change it to:
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]' # Ensure ALB listens on 443
+    alb.ingress.kubernetes.io/ssl-redirect: '443' # Optional: Redirect HTTP to HTTPS
+    # cert-manager.io/disable-self-check: "true"
+
+    alb.ingress.kubernetes.io/proxy-read-timeout: "33600"
+    alb.ingress.kubernetes.io/proxy-send-timeout: "33600"
+    # alb.ingress.kubernetes.io/rewrite-target: /
+
+spec:
+  ingressClassName: alb
+  # This section enables TLS on the ALB using the cert from cert-manager
+  # tls:
+    # - hosts:
+    #   - chatai.api.mmh-global.com 
+    #     # - k8s-genai-openwebu-dfd767cdbf-1006398550.ap-southeast-1.elb.amazonaws.com # A hostname
+    #   # secretName: genai-tls # cert-manager will create this secret for us
+    #   secretName: api-mmh-global-com-staging-tls # Use the secret created by cert-manager
+      # secretName: chatai-mmh-global-com-tls # cert-manager will create this secret for us
+  rules:
+    # - host: k8s-genai-openwebu-dfd767cdbf-1006398550.ap-southeast-1.elb.amazonaws.com
+    - host: chatai.api.mmh-global.com # The hostname for the Ingress
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: open-webui-svc
+                port:
+                  number: 80
+         
