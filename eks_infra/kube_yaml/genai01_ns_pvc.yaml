@@ -2,25 +2,25 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: genai
+  name: chatai
   # Add a label for Velero to easily find and back up this namespace
-  labels:
-    backup-by: velero
+  # labels:
+  #   backup-by: velero
 
 ---
 # 2. A PersistentVolumeClaim for stateful storage (EBS gp3)
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: ebs-claim
-  namespace: genai
+  name: chatai-app-webui-pvc
+  namespace: chatai
 spec:
   accessModes:
     - ReadWriteOnce # Typical for block storage like EBS
-  storageClassName: ebs-retain-sc # This MUST match the StorageClass you created
+  storageClassName: chatai-app-ebs-retain-sc # This MUST match the StorageClass you created
   resources:
     requests:
-      storage: 1Gi
+      storage: 10Gi
 
 # ---
 # # 3. A PersistentVolumeClaim for shared storage (EFS)
@@ -28,7 +28,7 @@ spec:
 # kind: PersistentVolumeClaim
 # metadata:
 #   name: efs-claim
-#   namespace: genai
+#   namespace: chatai
 # spec:
 #   accessModes:
 #     - ReadWriteMany # The key feature of EFS
