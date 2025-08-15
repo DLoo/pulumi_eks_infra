@@ -145,7 +145,10 @@ eks_service_role = aws.iam.Role(f"{project_name}-eks-service-role",
         "Statement": [{
             "Effect": "Allow",
             "Principal": {"Service": "eks.amazonaws.com"},
-            "Action": "sts:AssumeRole",
+            "Action": [
+                "sts:AssumeRole",
+                "sts:TagSession"
+            ],
         }],
     }),
     tags=create_common_tags("eks-service-role"))
@@ -156,6 +159,18 @@ aws.iam.RolePolicyAttachment(f"{project_name}-eks-service-policy-attachment",
 aws.iam.RolePolicyAttachment(f"{project_name}-eks-vpc-resource-controller-attachment",
     role=eks_service_role.name,
     policy_arn="arn:aws:iam::aws:policy/AmazonEKSVPCResourceController")
+aws.iam.RolePolicyAttachment(f"{project_name}-eks-block-storage-attachment",
+    role=eks_service_role.name,
+    policy_arn="arn:aws:iam::aws:policy/AmazonEKSBlockStoragePolicy")
+aws.iam.RolePolicyAttachment(f"{project_name}-eks-compute-policy-attachment",
+    role=eks_service_role.name,
+    policy_arn="arn:aws:iam::aws:policy/AmazonEKSComputePolicy")
+aws.iam.RolePolicyAttachment(f"{project_name}-eks-loadbalancing-policy-attachment",
+    role=eks_service_role.name,
+    policy_arn="arn:aws:iam::aws:policy/AmazonEKSLoadBalancingPolicy")
+aws.iam.RolePolicyAttachment(f"{project_name}-eks-networking-policy-attachment",
+    role=eks_service_role.name,
+    policy_arn="arn:aws:iam::aws:policy/AmazonEKSNetworkingPolicy")
 
 eks_node_instance_role = aws.iam.Role(f"{project_name}-eks-node-role",
     assume_role_policy=json.dumps({
@@ -284,13 +299,39 @@ eks_cluster = eks.Cluster(f"{project_name}-eks",
     version=eks_cluster_version,
     enabled_cluster_log_types=["api", "audit", "authenticator", "controllerManager", "scheduler"],
     tags=create_common_tags("eks"),
-    node_group_options=eks.ClusterNodeGroupOptionsArgs(
-        instance_type=primary_instance_type,
-        desired_capacity=node_config["desired_count"],
-        min_size=node_config["min_count"],
-        max_size=node_config["max_count"],
-        labels={"ondemand": "true"}
+    # node_group_options=eks.ClusterNodeGroupOptionsArgs(
+    #     instance_type=primary_instance_type,
+    #     desired_capacity=node_config["desired_count"],
+    #     min_size=node_config["min_count"],
+    #     max_size=node_config["max_count"],
+    #     labels={"ondemand": "true"}
+    # ),
+    
+    # 1. Enable EKS Auto Mode.
+    auto_mode=eks.AutoModeOptionsArgs(
+        enabled=True
     ),
+
+    # 2. Set the authentication mode as required by the error message.
+    # API_AND_CONFIG_MAP is a safe choice for compatibility.
+    authentication_mode=eks.AuthenticationMode.API_AND_CONFIG_MAP,
+
+    # # 3. Provide the required access entry. We grant the Pulumi executor
+    # # administrative access to the cluster.
+    # access_entries={
+    #     "creator-admin-access": eks.AccessEntryArgs(
+    #         principal_arn=current_identity.arn,
+    #         access_policies={
+    #             "eks-admin-policy": eks.AccessPolicyAssociationArgs(
+    #                 policy_arn="arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminPolicy",
+    #                 access_scope=aws.eks.AccessPolicyAssociationAccessScopeArgs(
+    #                     type="cluster"
+    #                 ),
+    #             )
+    #         }
+    #     )
+    # },
+        
     opts=pulumi.ResourceOptions(
         protect=eks_cluster_protect,
         delete_before_replace=False,
@@ -302,135 +343,135 @@ k8s_provider = k8s.Provider(f"{project_name}-k8s-provider", kubeconfig=kubeconfi
 
 
 
-# # ==============================================================================
-# # --- 4. CERT-MANAGER (Certificate Management) ---
-# # ==============================================================================
+# ==============================================================================
+# --- 4. CERT-MANAGER (Certificate Management) ---
+# ==============================================================================
 
-# cert_manager_namespace = k8s.core.v1.Namespace("cert-manager-ns",
-#     metadata={
-#         "name": "cert-manager",
-#         "labels": {
-#             # This label is for an older EKS Pod Identity system and is not required for IRSA.
-#             # It's harmless to keep but can be removed.
-#             "eks.amazonaws.com/pod-identity-webhook-enabled": "true"
-#         }
-#     },
-#     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
+cert_manager_namespace = k8s.core.v1.Namespace("cert-manager-ns",
+    metadata={
+        "name": "cert-manager",
+        "labels": {
+            # This label is for an older EKS Pod Identity system and is not required for IRSA.
+            # It's harmless to keep but can be removed.
+            "eks.amazonaws.com/pod-identity-webhook-enabled": "true"
+        }
+    },
+    opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
 
-# # --- IAM for Cert-Manager ---
+# --- IAM for Cert-Manager ---
 
-# cert_manager_sa_name = f"{project_name}-cert-manager"
-# cert_manager_role_name = f"{project_name}-cert-manager-irsa-role"
+cert_manager_sa_name = f"{project_name}-cert-manager"
+cert_manager_role_name = f"{project_name}-cert-manager-irsa-role"
 
-# # Manually construct the ARN to break the circular dependency for the permissions policy.
-# aws_account_id = eks_cluster.core.oidc_provider.arn.apply(lambda arn: arn.split(':')[4])
-# cert_manager_role_arn = pulumi.Output.concat("arn:aws:iam::", aws_account_id, ":role/", cert_manager_role_name)
+# Manually construct the ARN to break the circular dependency for the permissions policy.
+aws_account_id = eks_cluster.core.oidc_provider.arn.apply(lambda arn: arn.split(':')[4])
+cert_manager_role_arn = pulumi.Output.concat("arn:aws:iam::", aws_account_id, ":role/", cert_manager_role_name)
 
-# # Define a single, consolidated permissions policy for cert-manager.
-# cert_manager_iam_policy = aws.iam.Policy(f"{project_name}-cert-manager-policy",
-#     name=f"{project_name}-CertManagerRoute53Policy",
-#     policy=pulumi.Output.all(
-#         hosted_zone_id=route53_hosted_zone_id,
-#         role_arn=cert_manager_role_arn
-#     ).apply(lambda args: json.dumps({
-#         "Version": "2012-10-17",
-#         "Statement": [
-#             # Standard Route53 permissions for DNS-01 challenge
-#             {
-#                 "Effect": "Allow",
-#                 "Action": ["route53:GetChange"],
-#                 "Resource": "arn:aws:route53:::change/*"
-#             },
-#             {
-#                 "Effect": "Allow",
-#                 "Action": ["route53:ChangeResourceRecordSets", "route53:ListResourceRecordSets"],
-#                 "Resource": f"arn:aws:route53:::hostedzone/{args['hosted_zone_id']}"
-#             },
-#             # Permission to discover the correct delegated hosted zone
-#             {
-#                 "Effect": "Allow",
-#                 "Action": ["route53:ListHostedZones", "route53:ListHostedZonesByName"],
-#                 "Resource": "*"
-#             },
-#             # THE FINAL FIX: Permissions for the solver to get role info and assume itself
-#             {
-#                 "Effect": "Allow",
-#                 "Action": [
-#                     "iam:GetRole",
-#                     "sts:AssumeRole"
-#                 ],
-#                 "Resource": args['role_arn']
-#             }
-#         ]
-#     }))
-# )
+# Define a single, consolidated permissions policy for cert-manager.
+cert_manager_iam_policy = aws.iam.Policy(f"{project_name}-cert-manager-policy",
+    name=f"{project_name}-CertManagerRoute53Policy",
+    policy=pulumi.Output.all(
+        hosted_zone_id=route53_hosted_zone_id,
+        role_arn=cert_manager_role_arn
+    ).apply(lambda args: json.dumps({
+        "Version": "2012-10-17",
+        "Statement": [
+            # Standard Route53 permissions for DNS-01 challenge
+            {
+                "Effect": "Allow",
+                "Action": ["route53:GetChange"],
+                "Resource": "arn:aws:route53:::change/*"
+            },
+            {
+                "Effect": "Allow",
+                "Action": ["route53:ChangeResourceRecordSets", "route53:ListResourceRecordSets"],
+                "Resource": f"arn:aws:route53:::hostedzone/{args['hosted_zone_id']}"
+            },
+            # Permission to discover the correct delegated hosted zone
+            {
+                "Effect": "Allow",
+                "Action": ["route53:ListHostedZones", "route53:ListHostedZonesByName"],
+                "Resource": "*"
+            },
+            # THE FINAL FIX: Permissions for the solver to get role info and assume itself
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "iam:GetRole",
+                    "sts:AssumeRole"
+                ],
+                "Resource": args['role_arn']
+            }
+        ]
+    }))
+)
 
-# # Create the IAM Role with the standard IRSA Trust Policy.
-# cert_manager_irsa_role = aws.iam.Role(f"{project_name}-cert-manager-irsa-role",
-#     name=cert_manager_role_name,
-#     assume_role_policy=pulumi.Output.all(
-#         oidc_provider_arn=eks_cluster.core.oidc_provider.arn,
-#         oidc_provider_url=eks_cluster.core.oidc_provider.url
-#     ).apply(
-#         lambda args: json.dumps({
-#             "Version": "2012-10-17",
-#             "Statement": [{
-#                 "Effect": "Allow",
-#                 "Principal": {"Federated": args["oidc_provider_arn"]},
-#                 "Action": "sts:AssumeRoleWithWebIdentity",
-#                 "Condition": {
-#                     "StringEquals": {
-#                         f"{args['oidc_provider_url'].replace('https://', '')}:sub": f"system:serviceaccount:cert-manager:{cert_manager_sa_name}"
-#                     }
-#                 }
-#             }]
-#         })
-#     ),
-#     tags=create_common_tags("cert-manager-irsa-role"),
-#     opts=pulumi.ResourceOptions(depends_on=[eks_cluster.core.oidc_provider])
-# )
+# Create the IAM Role with the standard IRSA Trust Policy.
+cert_manager_irsa_role = aws.iam.Role(f"{project_name}-cert-manager-irsa-role",
+    name=cert_manager_role_name,
+    assume_role_policy=pulumi.Output.all(
+        oidc_provider_arn=eks_cluster.core.oidc_provider.arn,
+        oidc_provider_url=eks_cluster.core.oidc_provider.url
+    ).apply(
+        lambda args: json.dumps({
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Principal": {"Federated": args["oidc_provider_arn"]},
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                    "StringEquals": {
+                        f"{args['oidc_provider_url'].replace('https://', '')}:sub": f"system:serviceaccount:cert-manager:{cert_manager_sa_name}"
+                    }
+                }
+            }]
+        })
+    ),
+    tags=create_common_tags("cert-manager-irsa-role"),
+    opts=pulumi.ResourceOptions(depends_on=[eks_cluster.core.oidc_provider])
+)
 
-# # Attach the single, complete policy to the role.
-# aws.iam.RolePolicyAttachment(f"{project_name}-cert-manager-irsa-policy-attachment",
-#     role=cert_manager_irsa_role.name,
-#     policy_arn=cert_manager_iam_policy.arn
-# )
+# Attach the single, complete policy to the role.
+aws.iam.RolePolicyAttachment(f"{project_name}-cert-manager-irsa-policy-attachment",
+    role=cert_manager_irsa_role.name,
+    policy_arn=cert_manager_iam_policy.arn
+)
 
-# # --- Helm Chart for cert-manager ---
+# --- Helm Chart for cert-manager ---
 
-# public_dns_resolvers = [
-#     "8.8.8.8:53",
-#     "8.8.4.4:53",
-#     "1.1.1.1:53"
-# ]
+public_dns_resolvers = [
+    "8.8.8.8:53",
+    "8.8.4.4:53",
+    "1.1.1.1:53"
+]
 
-# cert_manager_chart = Chart(cert_manager_sa_name,
-#     ChartOpts(
-#         chart="cert-manager",
-#         version=eks_cert_manager_version,
-#         fetch_opts=FetchOpts(repo="https://charts.jetstack.io"),
-#         namespace=cert_manager_namespace.metadata["name"],
-#         values={
-#             "installCRDs": True,
-#             "prometheus": {"enabled": False},
-#             "serviceAccount": {
-#                 "create": True,
-#                 "name": cert_manager_sa_name,
-#                 "annotations": {
-#                     "eks.amazonaws.com/role-arn": cert_manager_irsa_role.arn
-#                 }
-#             },
-#             "extraArgs": [
-#                 "--dns01-recursive-nameservers-only=true",
-#                 f"--dns01-recursive-nameservers={','.join(public_dns_resolvers)}"
-#             ]
-#         }
-#     ),
-#     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[
-#         cert_manager_irsa_role,
-#         cert_manager_iam_policy # Explicit dependency on the policy
-#     ])
-# )
+cert_manager_chart = Chart(cert_manager_sa_name,
+    ChartOpts(
+        chart="cert-manager",
+        version=eks_cert_manager_version,
+        fetch_opts=FetchOpts(repo="https://charts.jetstack.io"),
+        namespace=cert_manager_namespace.metadata["name"],
+        values={
+            "installCRDs": True,
+            "prometheus": {"enabled": False},
+            "serviceAccount": {
+                "create": True,
+                "name": cert_manager_sa_name,
+                "annotations": {
+                    "eks.amazonaws.com/role-arn": cert_manager_irsa_role.arn
+                }
+            },
+            "extraArgs": [
+                "--dns01-recursive-nameservers-only=true",
+                f"--dns01-recursive-nameservers={','.join(public_dns_resolvers)}"
+            ]
+        }
+    ),
+    opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[
+        cert_manager_irsa_role,
+        cert_manager_iam_policy # Explicit dependency on the policy
+    ])
+)
 
 
 
@@ -726,7 +767,7 @@ aws_load_balancer_controller_chart = Chart(f"{project_name}-lbc-chart",
                 # ]
             }
         }
-    ), opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[lbc_irsa_role, ebs_csi_driver_addon]))
+    ), opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[lbc_irsa_role, ebs_csi_driver_addon, cert_manager_chart]))
 
 # kubectl apply -k "github.com/aws/eks-charts/stable/aws-load-balancer-controller/crds?ref=master"
 # kubectl apply -f aws-lbc-crds.yaml
@@ -792,35 +833,35 @@ aws.iam.RolePolicyAttachment(f"{project_name}-external-dns-irsa-policy-attachmen
 )
 
 
-# # Get the existing kube-system namespace to avoid creation conflicts
-# kube_system_ns = k8s.core.v1.Namespace.get("kube-system", "kube-system", opts=pulumi.ResourceOptions(provider=k8s_provider))
+# Get the existing kube-system namespace to avoid creation conflicts
+kube_system_ns = k8s.core.v1.Namespace.get("kube-system", "kube-system", opts=pulumi.ResourceOptions(provider=k8s_provider))
 
-# # 3. Helm Chart for ExternalDNS
-# external_dns_chart = Chart("external-dns",
-#     ChartOpts(
-#         chart="external-dns",
-#         version="1.17.0", # Use a recent, stable version
-#         fetch_opts=FetchOpts(repo="https://kubernetes-sigs.github.io/external-dns/"),
-#         namespace=kube_system_ns.metadata["name"],
-#         values={
-#             "serviceAccount": {
-#                 "create": True,
-#                 "name": external_dns_sa_name,
-#                 "annotations": {
-#                     "eks.amazonaws.com/role-arn": external_dns_irsa_role.arn
-#                 }
-#             },
-#             "provider": "aws",
-#             "policy": "sync", # This ensures records are deleted when the Ingress is deleted
-#             "aws": {
-#                 "region": aws_region
-#             },
-#             # IMPORTANT: This prevents ExternalDNS from touching domains it shouldn't
-#             "domainFilters": ["api.mmh-global.com"],
-#             # IMPORTANT: This creates a TXT record to identify records managed by this instance
-#             "txtOwnerId": route53_hosted_zone_id
-#         }
-#     ), opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[external_dns_irsa_role, aws_load_balancer_controller_chart]))
+# 3. Helm Chart for ExternalDNS
+external_dns_chart = Chart("external-dns",
+    ChartOpts(
+        chart="external-dns",
+        version="1.17.0", # Use a recent, stable version
+        fetch_opts=FetchOpts(repo="https://kubernetes-sigs.github.io/external-dns/"),
+        namespace=kube_system_ns.metadata["name"],
+        values={
+            "serviceAccount": {
+                "create": True,
+                "name": external_dns_sa_name,
+                "annotations": {
+                    "eks.amazonaws.com/role-arn": external_dns_irsa_role.arn
+                }
+            },
+            "provider": "aws",
+            "policy": "sync", # This ensures records are deleted when the Ingress is deleted
+            "aws": {
+                "region": aws_region
+            },
+            # IMPORTANT: This prevents ExternalDNS from touching domains it shouldn't
+            "domainFilters": ["app.mmh-global.com"],
+            # IMPORTANT: This creates a TXT record to identify records managed by this instance
+            "txtOwnerId": route53_hosted_zone_id
+        }
+    ), opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[external_dns_irsa_role, aws_load_balancer_controller_chart]))
 
 
 
@@ -935,126 +976,126 @@ efs_storage_class = k8s.storage.v1.StorageClass("efs-sc",
     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[efs_csi_driver_chart]))
 
 
-# --- Cluster Autoscaler (Compute Autoscaling) ---
-cas_namespace = "kube-system" # Common namespace for CAS
-cas_sa_name = "cluster-autoscaler"
+# # --- Cluster Autoscaler (Compute Autoscaling) ---
+# cas_namespace = "kube-system" # Common namespace for CAS
+# cas_sa_name = "cluster-autoscaler"
 
-# 1. IAM Policy for Cluster Autoscaler
-cas_iam_policy_doc = aws.iam.get_policy_document(statements=[
-    aws.iam.GetPolicyDocumentStatementArgs(
-        effect="Allow",
-        actions=[
-            "autoscaling:DescribeAutoScalingGroups",
-            "autoscaling:DescribeAutoScalingInstances",
-            "autoscaling:DescribeLaunchConfigurations",
-            "autoscaling:DescribeTags",
-            "ec2:DescribeLaunchTemplateVersions",
-            "ec2:DescribeInstanceTypes" # Added for more flexible instance type selection
-        ],
-        resources=["*"],
-    ),
-    aws.iam.GetPolicyDocumentStatementArgs(
-        effect="Allow",
-        actions=[
-            "autoscaling:SetDesiredCapacity",
-            "autoscaling:TerminateInstanceInAutoScalingGroup",
-            "autoscaling:UpdateAutoScalingGroup", # Added for more comprehensive ASG management
-        ],
-        resources=["*"], # Should be scoped to ASGs tagged for this cluster
-        # Example condition to scope to specific cluster, requires node groups to be tagged appropriately
-        # conditions=[aws.iam.GetPolicyDocumentStatementConditionArgs(
-        #     test="StringEquals",
-        #     variable=f"autoscaling:ResourceTag/k8s.io/cluster-autoscaler/{eks_cluster.eks_cluster.name}", # Use actual cluster name
-        #     values=["owned"]
-        # )]
-    )
-])
-cas_iam_policy = aws.iam.Policy(f"{project_name}-cas-policy",
-    name=f"{project_name}-ClusterAutoscalerPolicy",
-    policy=cas_iam_policy_doc.json,
-    description="IAM policy for EKS Cluster Autoscaler")
+# # 1. IAM Policy for Cluster Autoscaler
+# cas_iam_policy_doc = aws.iam.get_policy_document(statements=[
+#     aws.iam.GetPolicyDocumentStatementArgs(
+#         effect="Allow",
+#         actions=[
+#             "autoscaling:DescribeAutoScalingGroups",
+#             "autoscaling:DescribeAutoScalingInstances",
+#             "autoscaling:DescribeLaunchConfigurations",
+#             "autoscaling:DescribeTags",
+#             "ec2:DescribeLaunchTemplateVersions",
+#             "ec2:DescribeInstanceTypes" # Added for more flexible instance type selection
+#         ],
+#         resources=["*"],
+#     ),
+#     aws.iam.GetPolicyDocumentStatementArgs(
+#         effect="Allow",
+#         actions=[
+#             "autoscaling:SetDesiredCapacity",
+#             "autoscaling:TerminateInstanceInAutoScalingGroup",
+#             "autoscaling:UpdateAutoScalingGroup", # Added for more comprehensive ASG management
+#         ],
+#         resources=["*"], # Should be scoped to ASGs tagged for this cluster
+#         # Example condition to scope to specific cluster, requires node groups to be tagged appropriately
+#         # conditions=[aws.iam.GetPolicyDocumentStatementConditionArgs(
+#         #     test="StringEquals",
+#         #     variable=f"autoscaling:ResourceTag/k8s.io/cluster-autoscaler/{eks_cluster.eks_cluster.name}", # Use actual cluster name
+#         #     values=["owned"]
+#         # )]
+#     )
+# ])
+# cas_iam_policy = aws.iam.Policy(f"{project_name}-cas-policy",
+#     name=f"{project_name}-ClusterAutoscalerPolicy",
+#     policy=cas_iam_policy_doc.json,
+#     description="IAM policy for EKS Cluster Autoscaler")
 
-# 2. IRSA Role for Cluster Autoscaler
-cas_irsa_role = aws.iam.Role(f"{project_name}-cas-irsa-role",
-    assume_role_policy=pulumi.Output.all(
-        oidc_provider_arn=eks_cluster.core.oidc_provider.arn,
-        oidc_provider_url=eks_cluster.core.oidc_provider.url
-    ).apply(
-        lambda args: json.dumps({
-            "Version": "2012-10-17",
-            "Statement": [{
-                "Effect": "Allow",
-                "Principal": {"Federated": args["oidc_provider_arn"]},
-                "Action": "sts:AssumeRoleWithWebIdentity",
-                "Condition": {
-                    "StringEquals": {f"{args['oidc_provider_url'].replace('https://', '')}:sub": f"system:serviceaccount:{cas_namespace}:{cas_sa_name}"}
-                }
-            }]
-        })
-    ),
-    tags=create_common_tags("cas-irsa-role"),
-    opts=pulumi.ResourceOptions(depends_on=[eks_cluster.core.oidc_provider]))
+# # 2. IRSA Role for Cluster Autoscaler
+# cas_irsa_role = aws.iam.Role(f"{project_name}-cas-irsa-role",
+#     assume_role_policy=pulumi.Output.all(
+#         oidc_provider_arn=eks_cluster.core.oidc_provider.arn,
+#         oidc_provider_url=eks_cluster.core.oidc_provider.url
+#     ).apply(
+#         lambda args: json.dumps({
+#             "Version": "2012-10-17",
+#             "Statement": [{
+#                 "Effect": "Allow",
+#                 "Principal": {"Federated": args["oidc_provider_arn"]},
+#                 "Action": "sts:AssumeRoleWithWebIdentity",
+#                 "Condition": {
+#                     "StringEquals": {f"{args['oidc_provider_url'].replace('https://', '')}:sub": f"system:serviceaccount:{cas_namespace}:{cas_sa_name}"}
+#                 }
+#             }]
+#         })
+#     ),
+#     tags=create_common_tags("cas-irsa-role"),
+#     opts=pulumi.ResourceOptions(depends_on=[eks_cluster.core.oidc_provider]))
 
-aws.iam.RolePolicyAttachment(f"{project_name}-cas-irsa-policy-attachment",
-    role=cas_irsa_role.name,
-    policy_arn=cas_iam_policy.arn)
+# aws.iam.RolePolicyAttachment(f"{project_name}-cas-irsa-policy-attachment",
+#     role=cas_irsa_role.name,
+#     policy_arn=cas_iam_policy.arn)
 
-# 3. Service Account for Cluster Autoscaler (annotated for IRSA)
-# The Helm chart can create this, but creating it explicitly gives more control for IRSA.
-cas_sa = k8s.core.v1.ServiceAccount(f"{project_name}-cas-sa",
-    metadata=k8s.meta.v1.ObjectMetaArgs(
-        name=cas_sa_name,
-        namespace=cas_namespace,
-        annotations={"eks.amazonaws.com/role-arn": cas_irsa_role.arn}
-    ),
-    opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster.core.oidc_provider, cas_irsa_role]))
+# # 3. Service Account for Cluster Autoscaler (annotated for IRSA)
+# # The Helm chart can create this, but creating it explicitly gives more control for IRSA.
+# cas_sa = k8s.core.v1.ServiceAccount(f"{project_name}-cas-sa",
+#     metadata=k8s.meta.v1.ObjectMetaArgs(
+#         name=cas_sa_name,
+#         namespace=cas_namespace,
+#         annotations={"eks.amazonaws.com/role-arn": cas_irsa_role.arn}
+#     ),
+#     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster.core.oidc_provider, cas_irsa_role]))
 
 
-# 4. Helm Chart for Cluster Autoscaler
-# Ensure your managed node groups are tagged correctly.
-# pulumi-eks's `eks.Cluster` with `node_group_options` usually tags them with:
-#   `k8s.io/cluster-autoscaler/enabled: "true"`
-#   `k8s.io/cluster-autoscaler/<YOUR_CLUSTER_NAME>: "owned"`
-# These tags are used by CAS for auto-discovery.
+# # 4. Helm Chart for Cluster Autoscaler
+# # Ensure your managed node groups are tagged correctly.
+# # pulumi-eks's `eks.Cluster` with `node_group_options` usually tags them with:
+# #   `k8s.io/cluster-autoscaler/enabled: "true"`
+# #   `k8s.io/cluster-autoscaler/<YOUR_CLUSTER_NAME>: "owned"`
+# # These tags are used by CAS for auto-discovery.
 
-cluster_autoscaler_chart = Chart(f"{project_name}-cluster-autoscaler",
-    ChartOpts(
-        chart="cluster-autoscaler",
-        version=eks_cluster_autoscaler_version,
-        fetch_opts=FetchOpts(repo="https://kubernetes.github.io/autoscaler"),
-        namespace=cas_namespace,
-        values={
-            "awsRegion": aws_region,
-            "autoDiscovery": {
-                # eks_cluster.eks_cluster.name is an Output, so we need to apply
-                "clusterName": eks_cluster.eks_cluster.name,
-            },
-            "rbac": {
-                "serviceAccount": {
-                    "create": False, # We created it above with IRSA annotations
-                    "name": cas_sa_name,
-                },
-                # PSP is deprecated, if your chart version still has it, set to false for K8s 1.25+
-                # "pspEnabled": False 
-            },
-            "cloudProvider": "aws",
-            # Important: Ensure this matches your EKS cluster name for tag-based discovery
-            "extraArgs": {
-                "balance-similar-node-groups": "true",
-                "skip-nodes-with-local-storage": "false", # Default, adjust if needed
-                "skip-nodes-with-system-pods": "true", # Default
-                 # Example: To make CAS more aggressive about scaling down
-                # "scale-down-unneeded-time": "5m",
-                # "scale-down-delay-after-add": "10m",
-            },
-            # Add tolerations if CAS needs to run on tainted nodes (e.g. control plane or specific infra nodes)
-            # "tolerations": [
-            #    {"key": "CriticalAddonsOnly", "operator": "Exists"}
-            # ],
-        }
-    ), opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[
-        cas_sa, efs_storage_class # Depends on SA and other k8s resources being ready
-    ]))
+# cluster_autoscaler_chart = Chart(f"{project_name}-cluster-autoscaler",
+#     ChartOpts(
+#         chart="cluster-autoscaler",
+#         version=eks_cluster_autoscaler_version,
+#         fetch_opts=FetchOpts(repo="https://kubernetes.github.io/autoscaler"),
+#         namespace=cas_namespace,
+#         values={
+#             "awsRegion": aws_region,
+#             "autoDiscovery": {
+#                 # eks_cluster.eks_cluster.name is an Output, so we need to apply
+#                 "clusterName": eks_cluster.eks_cluster.name,
+#             },
+#             "rbac": {
+#                 "serviceAccount": {
+#                     "create": False, # We created it above with IRSA annotations
+#                     "name": cas_sa_name,
+#                 },
+#                 # PSP is deprecated, if your chart version still has it, set to false for K8s 1.25+
+#                 # "pspEnabled": False 
+#             },
+#             "cloudProvider": "aws",
+#             # Important: Ensure this matches your EKS cluster name for tag-based discovery
+#             "extraArgs": {
+#                 "balance-similar-node-groups": "true",
+#                 "skip-nodes-with-local-storage": "false", # Default, adjust if needed
+#                 "skip-nodes-with-system-pods": "true", # Default
+#                  # Example: To make CAS more aggressive about scaling down
+#                 # "scale-down-unneeded-time": "5m",
+#                 # "scale-down-delay-after-add": "10m",
+#             },
+#             # Add tolerations if CAS needs to run on tainted nodes (e.g. control plane or specific infra nodes)
+#             # "tolerations": [
+#             #    {"key": "CriticalAddonsOnly", "operator": "Exists"}
+#             # ],
+#         }
+#     ), opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[
+#         cas_sa, efs_storage_class # Depends on SA and other k8s resources being ready
+#     ]))
 
 
 

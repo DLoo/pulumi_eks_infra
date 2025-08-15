@@ -1,8 +1,8 @@
 config:
   aws:region: ap-southeast-1 # Global AWS provider config, this is fine
-  eks_infra:project_name: eks-mmh-sg
+  eks_infra:project_name: mmh-sg
   eks_infra:environment: prod
-  eks_infra:eks_cluster_name: eks-prod-mmh-sg-cluster 
+  # eks_infra:eks_cluster_name: mmh-sg-cluster 
   eks_infra:vpc_cidr: 10.0.0.0/16               
   eks_infra:public_subnet_cidrs:               
     - 10.0.1.0/24
@@ -22,7 +22,7 @@ config:
   eks_infra:eks_node_desired_count: "2"        
   eks_infra:eks_node_min_count: "2"            
   eks_infra:eks_node_max_count: "5"            
-  eks_infra:velero_s3_bucket_name: "eks-mmh-sg-s3" 
+  eks_infra:velero_s3_bucket_name: "mmh-sg-s3" 
   # The duplicate eks_infra:project_name at the end has been removed.
 
   eks_infra:eks_cluster_version: "1.33"  
@@ -43,5 +43,5 @@ config:
   eks_infra:alert_email_address: "donaldhp.loo@mmh-global.com"
   eks_infra:letsencrypt_email_address: "it.admin@mmh-global.com"
 
-  eks_infra:route53_hosted_zone_id: "Z0122484V5H5F2CJD5Z3"
+  eks_infra:route53_hosted_zone_id: "Z09700871FJ2A2TMV67BU"
   
