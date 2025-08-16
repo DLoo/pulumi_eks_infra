@@ -104,51 +104,56 @@ velero_s3_bucket_name = config.require("velero_s3_bucket_name")
 # --- NETWORKING (ENHANCED) ---
 # ==============================================================================
 
-# 1. Define all subnet specifications together.
-# We'll now treat "db" subnets as just another type of private subnet.
-all_private_subnet_cidrs = private_subnet_cidrs + db_subnet_cidrs
-
+# 1. Define separate subnet specifications for each type.
 subnet_specs = [
     awsx.ec2.SubnetSpecArgs(
         type=awsx.ec2.SubnetType.PUBLIC,
         cidr_blocks=public_subnet_cidrs,
         name="public"
     ),
-    # Define a single private subnet group that includes both app and db CIDRs.
     awsx.ec2.SubnetSpecArgs(
         type=awsx.ec2.SubnetType.PRIVATE,
-        cidr_blocks=all_private_subnet_cidrs,
-        name="private" # This name is used for tagging and route table creation
-    )
+        cidr_blocks=private_subnet_cidrs,
+        name="private-app"
+    ),
 ]
 
-# 2. Create the VPC using the consolidated subnet specs.
+# if db_subnet_cidrs:
+#     subnet_specs.append(
+#         awsx.ec2.SubnetSpecArgs(
+#             type=awsx.ec2.SubnetType.PRIVATE,
+#             cidr_blocks=db_subnet_cidrs,
+#             name="private-db"
+#         )
+#     )
+
+# 2. Create the VPC using the corrected subnet specs.
 vpc = awsx.ec2.Vpc(f"{project_name}-vpc",
     cidr_block=vpc_cidr,
     availability_zone_names=availability_zones,
     subnet_specs=subnet_specs,
-    # The awsx.Vpc component automatically creates one NAT Gateway per AZ
-    # and a single route table for all private subnets, which is exactly
-    # what we want to solve the routing issue.
     nat_gateways=awsx.ec2.NatGatewayConfigurationArgs(
         strategy=awsx.ec2.NatGatewayStrategy.ONE_PER_AZ
     ),
     tags=create_common_tags("vpc"))
 
 
-# 3. Create the RDS Subnet Group using the IDs of the DB subnets from the VPC component.
-# The `awsx.Vpc` component outputs all created subnets. We can filter them.
-db_subnet_ids = []
-if db_subnet_cidrs:
-    db_subnet_ids = vpc.private_subnet_ids.apply(
-        lambda ids: [s.id for s in vpc.get_subnets(awsx.ec2.SubnetType.PRIVATE) if s.cidr_block in db_subnet_cidrs]
-    )
+# # ==============================================================================
+# # --- 3. CREATE THE RDS SUBNET GROUP (CORRECTED LOGIC) ---
+# # ==============================================================================
+# db_subnet_ids_output = None
+# if db_subnet_cidrs:
+#     # The `vpc.private_subnets` is an Output that will resolve to a list of subnet objects.
+#     # We apply a transformation to this list to filter it.
+#     db_subnet_ids_output = vpc.private_subnets.apply(
+#         lambda subnets: [s.id for s in subnets if s.cidr_block in db_subnet_cidrs]
+#     )
 
-    db_subnet_group = aws.rds.SubnetGroup(f"{project_name}-db-sng",
-        subnet_ids=db_subnet_ids,
-        tags=create_common_tags("db-sng"))
-    pulumi.export("db_subnet_group_name", db_subnet_group.name)
-
+#     db_subnet_group = aws.rds.SubnetGroup(f"{project_name}-db-sng",
+#         # We pass the Output directly to the subnet_ids property.
+#         subnet_ids=db_subnet_ids_output,
+#         tags=create_common_tags("db-sng"))
+#     pulumi.export("db_subnet_group_name", db_subnet_group.name)
 
 
 
