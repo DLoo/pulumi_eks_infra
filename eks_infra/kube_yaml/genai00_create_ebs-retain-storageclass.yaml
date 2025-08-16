@@ -3,7 +3,8 @@ kind: StorageClass
 metadata:
   name: chatai-app-ebs-retain-sc # You can name it anything you like
 allowVolumeExpansion: true 
-provisioner: ebs.csi.aws.com # For CSI driver
+provisioner: ebs.csi.aws.com 
+# provisioner: kubernetes.io/aws-ebs # For CSI driver
 parameters:
   type: gp3 # Or gp2, io1, etc. based on your needs
   fsType: ext4

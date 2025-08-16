@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: chatai-app-certificate
+  namespace: chatai # <-- Place it in the same namespace as your Ingress
+spec:
+  secretName: chatai-tls-secret # cert-manager will store the TLS cert in this Kubernetes secret
+  dnsNames:
+  - chatai.app.mmh-global.com
+  issuerRef:
+    name: letsencrypt-prod-app-mmh-global-com # <-- Tells it to use the ClusterIssuer we just defined
+    kind: ClusterIssuer

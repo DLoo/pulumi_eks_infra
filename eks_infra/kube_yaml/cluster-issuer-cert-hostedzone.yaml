@@ -1,0 +1,16 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod-app-mmh-global-com
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: donaldhp.loo@mmh-global.com # <-- IMPORTANT: Use a real email address
+    privateKeySecretRef:
+      name: letsencrypt-prod-private-key
+    solvers:
+    - dns01:
+        route53:
+          region: ap-southeast-1
+          # The hostedZoneID for 'app.mmh-global.com'
+          hostedZoneID: Z09700871FJ2A2TMV67BU # <-- IMPORTANT: Use your real Hosted Zone ID from Route 53

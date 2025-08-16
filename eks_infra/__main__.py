@@ -19,9 +19,10 @@ vpc_cidr = config.require("vpc_cidr")
 eks_cluster_version = config.get("eks_cluster_version") or "1.32"
 eks_ebs_csi_driver_version = config.get("eks_ebs_csi_driver_version") or "v1.44.0-eksbuild.1"
 eks_efs_csi_driver_version = config.get("eks_efs_csi_driver_version") or " 3.1.9"
+eks_volume_snapshotter_version = config.get("eks_volume_snapshotter_version") or "4.1.0"
 eks_cert_manager_version = config.get("eks_cert_manager_version") or "v1.18.0"
 eks_velero_version = config.get("eks_velero_version") or "10.0.4"
-eks_aws_load_balancer_controller_version = config.get("eks_aws_load_balancer_controller_version") or "1.13.2"
+eks_aws_load_balancer_controller_version = config.get("eks_aws_load_balancer_controller_version") or "1.13.4"
 eks_cluster_autoscaler_version = config.get("eks_cluster_autoscaler_version") or "9.46.6" # Helm chart version for CAS
 eks_velero_aws_plugin_version = config.require("eks_velero_aws_plugin_version")
 route53_hosted_zone_id = config.require("route53_hosted_zone_id")
@@ -29,6 +30,8 @@ route53_hosted_zone_id = config.require("route53_hosted_zone_id")
 eks_efs_protect = config.get_bool("eks_efs_protect") if config.get("eks_efs_protect") is not None else True
 eks_cluster_protect = config.get_bool("eks_cluster_protect") if config.get("eks_cluster_protect") is not None else False
 eks_velero_protect = config.get_bool("eks_velero_protect") if config.get("eks_velero_protect") is not None else True
+
+
 
 def validate_subnet_cidrs(subnet_cidrs: List[str], az_count: int, subnet_type: str) -> bool:
     """Validate subnet CIDR configuration against availability zones."""
@@ -112,6 +115,7 @@ if validate_subnet_cidrs(private_subnet_cidrs, len(availability_zones), "private
         name="private"
     ))
 
+
 vpc = awsx.ec2.Vpc(f"{project_name}-vpc",
     cidr_block=vpc_cidr,
     availability_zone_names=availability_zones,
@@ -137,6 +141,10 @@ if db_subnets_ids:
         subnet_ids=db_subnets_ids,
         tags=create_common_tags("db-sng"))
     pulumi.export("db_subnet_group_name", db_subnet_group.name)
+
+
+
+
 
 # --- IAM Roles ---
 eks_service_role = aws.iam.Role(f"{project_name}-eks-service-role",
@@ -196,97 +204,10 @@ for i, policy_arn in enumerate(managed_node_policy_arns):
         policy_arn=policy_arn)
 
 
-# # --- WAF (Web Application Firewall) with Let's Encrypt Exception ---
-# web_acl = aws.wafv2.WebAcl(f"{project_name}-web-acl",
-#     name=f"{project_name}-web-acl",
-#     scope="REGIONAL",
-#     default_action=aws.wafv2.WebAclDefaultActionArgs(allow={}),
-#     visibility_config=aws.wafv2.WebAclVisibilityConfigArgs(
-#         cloudwatch_metrics_enabled=True,
-#         metric_name=f"{project_name}-web-acl-metrics",
-#         sampled_requests_enabled=True,
-#     ),
-#     rules=[
-#         # ==============================================================================
-#         # === NEW RULE: Allow Let's Encrypt HTTP-01 challenge requests                 ===
-#         # === This rule has the highest priority (0) to ensure it's evaluated first. ===
-#         # ==============================================================================
-#         aws.wafv2.WebAclRuleArgs(
-#             name="Allow-LetsEncrypt-Challenge",
-#             priority=0, # Highest priority
-#             action=aws.wafv2.WebAclRuleActionArgs(
-#                 allow=aws.wafv2.WebAclRuleActionAllowArgs() # Allow the request
-#             ),
-#             statement=aws.wafv2.WebAclRuleStatementArgs(
-#                 byte_match_statement=aws.wafv2.WebAclRuleStatementByteMatchStatementArgs(
-#                     # Look in the URI path of the request
-#                     field_to_match=aws.wafv2.WebAclRuleStatementByteMatchStatementFieldToMatchArgs(
-#                         uri_path=aws.wafv2.WebAclRuleStatementByteMatchStatementFieldToMatchUriPathArgs()
-#                     ),
-#                     # Match if the URI starts with this string
-#                     search_string="/.well-known/acme-challenge/",
-#                     positional_constraint="STARTS_WITH",
-#                     text_transformations=[
-#                         aws.wafv2.WebAclRuleStatementByteMatchStatementTextTransformationArgs(
-#                             priority=0,
-#                             type="NONE" # No transformation needed
-#                         )
-#                     ]
-#                 )
-#             ),
-#             visibility_config=aws.wafv2.WebAclVisibilityConfigArgs(
-#                 cloudwatch_metrics_enabled=True,
-#                 metric_name="allow-letsencrypt",
-#                 sampled_requests_enabled=True,
-#             ),
-#         ),
-#         # ==============================================================================
-#         # === Existing WAF Rules (Priorities are now shifted down by one)            ===
-#         # ==============================================================================
-#         # aws.wafv2.WebAclRuleArgs(
-#         #     name="AWS-Managed-Rules-Common-Rule-Set",
-#         #     priority=1, # Original priority was 1, stays the same relative to other block rules
-#         #     override_action=aws.wafv2.WebAclRuleOverrideActionArgs(
-#         #         none=aws.wafv2.WebAclRuleOverrideActionNoneArgs()
-#         #     ),
-#         #     statement=aws.wafv2.WebAclRuleStatementArgs(
-#         #         managed_rule_group_statement=aws.wafv2.WebAclRuleStatementManagedRuleGroupStatementArgs(
-#         #             vendor_name="AWS",
-#         #             name="AWSManagedRulesCommonRuleSet",
-#         #         )
-#         #     ),
-#         #     visibility_config=aws.wafv2.WebAclVisibilityConfigArgs(
-#         #         cloudwatch_metrics_enabled=True,
-#         #         metric_name="aws-managed-common-rules",
-#         #         sampled_requests_enabled=True,
-#         #     ),
-#         # ),
-#         # aws.wafv2.WebAclRuleArgs(
-#         #     name="AWS-Managed-Rules-Amazon-Ip-Reputation-List",
-#         #     priority=2, # Original priority was 2
-#         #     override_action=aws.wafv2.WebAclRuleOverrideActionArgs(
-#         #         none=aws.wafv2.WebAclRuleOverrideActionNoneArgs()
-#         #     ),
-#         #     statement=aws.wafv2.WebAclRuleStatementArgs(
-#         #         managed_rule_group_statement=aws.wafv2.WebAclRuleStatementManagedRuleGroupStatementArgs(
-#         #             vendor_name="AWS",
-#         #             name="AWSManagedRulesAmazonIpReputationList",
-#         #         )
-#         #     ),
-#         #     visibility_config=aws.wafv2.WebAclVisibilityConfigArgs(
-#         #         cloudwatch_metrics_enabled=True,
-#         #         metric_name="aws-managed-ip-reputation",
-#         #         sampled_requests_enabled=True,
-#         #     ),
-#         # ),
-#     ],
-#     tags=create_common_tags("waf-acl")
-# )
-
-
 
 # --- EKS Cluster ---
 primary_instance_type = node_config["instance_types"][0] if node_config["instance_types"] else "t3.medium"
+
 
 eks_cluster = eks.Cluster(f"{project_name}-eks",
     name=eks_cluster_name,
@@ -299,22 +220,22 @@ eks_cluster = eks.Cluster(f"{project_name}-eks",
     version=eks_cluster_version,
     enabled_cluster_log_types=["api", "audit", "authenticator", "controllerManager", "scheduler"],
     tags=create_common_tags("eks"),
-    # node_group_options=eks.ClusterNodeGroupOptionsArgs(
-    #     instance_type=primary_instance_type,
-    #     desired_capacity=node_config["desired_count"],
-    #     min_size=node_config["min_count"],
-    #     max_size=node_config["max_count"],
-    #     labels={"ondemand": "true"}
-    # ),
-    
-    # 1. Enable EKS Auto Mode.
-    auto_mode=eks.AutoModeOptionsArgs(
-        enabled=True
+    node_group_options=eks.ClusterNodeGroupOptionsArgs(
+        instance_type=primary_instance_type,
+        desired_capacity=node_config["desired_count"],
+        min_size=node_config["min_count"],
+        max_size=node_config["max_count"],
+        labels={"ondemand": "true"}
     ),
+    
+    # # 1. Enable EKS Auto Mode.
+    # auto_mode=eks.AutoModeOptionsArgs(
+    #     enabled=True
+    # ),
 
-    # 2. Set the authentication mode as required by the error message.
-    # API_AND_CONFIG_MAP is a safe choice for compatibility.
-    authentication_mode=eks.AuthenticationMode.API_AND_CONFIG_MAP,
+    # # 2. Set the authentication mode as required by the error message.
+    # # API_AND_CONFIG_MAP is a safe choice for compatibility.
+    # authentication_mode=eks.AuthenticationMode.API_AND_CONFIG_MAP,
 
     # # 3. Provide the required access entry. We grant the Pulumi executor
     # # administrative access to the cluster.
@@ -477,6 +398,10 @@ cert_manager_chart = Chart(cert_manager_sa_name,
 
 
 
+
+
+
+
 # --- EKS Add-ons & Cluster Services ---
 
 ebs_csi_sa_name = "ebs-csi-controller-sa"
@@ -623,24 +548,58 @@ aws.iam.RolePolicyAttachment(f"{project_name}-ebs-csi-irsa-policy-attachment",
     role=ebs_csi_irsa_role.name,
     policy_arn=ebs_csi_policy.arn)
 
+# # Now, update the Addon to use the role we just created.
+# ebs_csi_driver_addon = eks.Addon(f"{project_name}-ebs-csi-driver",
+#     cluster=eks_cluster,
+#     addon_name="aws-ebs-csi-driver",
+#     addon_version=eks_ebs_csi_driver_version,
+#     # --- FIX: Associate the IRSA role with the addon ---
+#     service_account_role_arn=ebs_csi_irsa_role.arn,
+#     # ---
+#     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
+
+
+
+# ==============================================================================
+# --- VOLUME SNAPSHOTTING SUPPORT (CRDs and Controller) ---
+# This is the fix for the csi-snapshotter errors.
+# It installs the required CRDs (VolumeSnapshotClass, VolumeSnapshot, etc.)
+# and the snapshot-controller that manages them. This must be installed
+# BEFORE any CSI drivers that use the snapshotting feature.
+# ==============================================================================
+volume_snapshotter_chart = Chart(f"{project_name}-snapshot-controller",
+    ChartOpts(
+        # The chart name from your successful command
+        chart="snapshot-controller",
+        version=eks_volume_snapshotter_version,
+        fetch_opts=FetchOpts(
+            # The repository from your successful command
+            repo="https://piraeus.io/helm-charts/"
+        ),
+        namespace="kube-system",
+        # The Piraeus chart installs CRDs by default, so no extra values are needed.
+    ),
+    opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
+
+
 # Now, update the Addon to use the role we just created.
 ebs_csi_driver_addon = eks.Addon(f"{project_name}-ebs-csi-driver",
     cluster=eks_cluster,
     addon_name="aws-ebs-csi-driver",
     addon_version=eks_ebs_csi_driver_version,
-    # --- FIX: Associate the IRSA role with the addon ---
     service_account_role_arn=ebs_csi_irsa_role.arn,
-    # ---
-    opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
+    # --- FIX: Add an explicit dependency on the snapshotter chart ---
+    # This ensures the CRDs are created before the EBS CSI driver starts.
+    opts=pulumi.ResourceOptions(
+        provider=k8s_provider,
+        depends_on=[
+            eks_cluster,
+            volume_snapshotter_chart # Add this dependency
+        ]
+    )
+)
 
 
-
-# # 1. AWS EBS CSI Driver
-# ebs_csi_driver_addon = eks.Addon(f"{project_name}-ebs-csi-driver",
-#     cluster=eks_cluster,
-#     addon_name="aws-ebs-csi-driver",
-#     addon_version=eks_ebs_csi_driver_version,  # "v1.44.0-eksbuild.1" is the latest as of 2023-10-01
-#     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
 
 gp3_storage_class = k8s.storage.v1.StorageClass("gp3-storage-class",
     metadata={"name": "gp3"},
@@ -976,366 +935,22 @@ efs_storage_class = k8s.storage.v1.StorageClass("efs-sc",
     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[efs_csi_driver_chart]))
 
 
-# # --- Cluster Autoscaler (Compute Autoscaling) ---
-# cas_namespace = "kube-system" # Common namespace for CAS
-# cas_sa_name = "cluster-autoscaler"
-
-# # 1. IAM Policy for Cluster Autoscaler
-# cas_iam_policy_doc = aws.iam.get_policy_document(statements=[
-#     aws.iam.GetPolicyDocumentStatementArgs(
-#         effect="Allow",
-#         actions=[
-#             "autoscaling:DescribeAutoScalingGroups",
-#             "autoscaling:DescribeAutoScalingInstances",
-#             "autoscaling:DescribeLaunchConfigurations",
-#             "autoscaling:DescribeTags",
-#             "ec2:DescribeLaunchTemplateVersions",
-#             "ec2:DescribeInstanceTypes" # Added for more flexible instance type selection
-#         ],
-#         resources=["*"],
-#     ),
-#     aws.iam.GetPolicyDocumentStatementArgs(
-#         effect="Allow",
-#         actions=[
-#             "autoscaling:SetDesiredCapacity",
-#             "autoscaling:TerminateInstanceInAutoScalingGroup",
-#             "autoscaling:UpdateAutoScalingGroup", # Added for more comprehensive ASG management
-#         ],
-#         resources=["*"], # Should be scoped to ASGs tagged for this cluster
-#         # Example condition to scope to specific cluster, requires node groups to be tagged appropriately
-#         # conditions=[aws.iam.GetPolicyDocumentStatementConditionArgs(
-#         #     test="StringEquals",
-#         #     variable=f"autoscaling:ResourceTag/k8s.io/cluster-autoscaler/{eks_cluster.eks_cluster.name}", # Use actual cluster name
-#         #     values=["owned"]
-#         # )]
-#     )
-# ])
-# cas_iam_policy = aws.iam.Policy(f"{project_name}-cas-policy",
-#     name=f"{project_name}-ClusterAutoscalerPolicy",
-#     policy=cas_iam_policy_doc.json,
-#     description="IAM policy for EKS Cluster Autoscaler")
-
-# # 2. IRSA Role for Cluster Autoscaler
-# cas_irsa_role = aws.iam.Role(f"{project_name}-cas-irsa-role",
-#     assume_role_policy=pulumi.Output.all(
-#         oidc_provider_arn=eks_cluster.core.oidc_provider.arn,
-#         oidc_provider_url=eks_cluster.core.oidc_provider.url
-#     ).apply(
-#         lambda args: json.dumps({
-#             "Version": "2012-10-17",
-#             "Statement": [{
-#                 "Effect": "Allow",
-#                 "Principal": {"Federated": args["oidc_provider_arn"]},
-#                 "Action": "sts:AssumeRoleWithWebIdentity",
-#                 "Condition": {
-#                     "StringEquals": {f"{args['oidc_provider_url'].replace('https://', '')}:sub": f"system:serviceaccount:{cas_namespace}:{cas_sa_name}"}
-#                 }
-#             }]
-#         })
-#     ),
-#     tags=create_common_tags("cas-irsa-role"),
-#     opts=pulumi.ResourceOptions(depends_on=[eks_cluster.core.oidc_provider]))
-
-# aws.iam.RolePolicyAttachment(f"{project_name}-cas-irsa-policy-attachment",
-#     role=cas_irsa_role.name,
-#     policy_arn=cas_iam_policy.arn)
-
-# # 3. Service Account for Cluster Autoscaler (annotated for IRSA)
-# # The Helm chart can create this, but creating it explicitly gives more control for IRSA.
-# cas_sa = k8s.core.v1.ServiceAccount(f"{project_name}-cas-sa",
-#     metadata=k8s.meta.v1.ObjectMetaArgs(
-#         name=cas_sa_name,
-#         namespace=cas_namespace,
-#         annotations={"eks.amazonaws.com/role-arn": cas_irsa_role.arn}
-#     ),
-#     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster.core.oidc_provider, cas_irsa_role]))
-
-
-# # 4. Helm Chart for Cluster Autoscaler
-# # Ensure your managed node groups are tagged correctly.
-# # pulumi-eks's `eks.Cluster` with `node_group_options` usually tags them with:
-# #   `k8s.io/cluster-autoscaler/enabled: "true"`
-# #   `k8s.io/cluster-autoscaler/<YOUR_CLUSTER_NAME>: "owned"`
-# # These tags are used by CAS for auto-discovery.
-
-# cluster_autoscaler_chart = Chart(f"{project_name}-cluster-autoscaler",
-#     ChartOpts(
-#         chart="cluster-autoscaler",
-#         version=eks_cluster_autoscaler_version,
-#         fetch_opts=FetchOpts(repo="https://kubernetes.github.io/autoscaler"),
-#         namespace=cas_namespace,
-#         values={
-#             "awsRegion": aws_region,
-#             "autoDiscovery": {
-#                 # eks_cluster.eks_cluster.name is an Output, so we need to apply
-#                 "clusterName": eks_cluster.eks_cluster.name,
-#             },
-#             "rbac": {
-#                 "serviceAccount": {
-#                     "create": False, # We created it above with IRSA annotations
-#                     "name": cas_sa_name,
-#                 },
-#                 # PSP is deprecated, if your chart version still has it, set to false for K8s 1.25+
-#                 # "pspEnabled": False 
-#             },
-#             "cloudProvider": "aws",
-#             # Important: Ensure this matches your EKS cluster name for tag-based discovery
-#             "extraArgs": {
-#                 "balance-similar-node-groups": "true",
-#                 "skip-nodes-with-local-storage": "false", # Default, adjust if needed
-#                 "skip-nodes-with-system-pods": "true", # Default
-#                  # Example: To make CAS more aggressive about scaling down
-#                 # "scale-down-unneeded-time": "5m",
-#                 # "scale-down-delay-after-add": "10m",
-#             },
-#             # Add tolerations if CAS needs to run on tainted nodes (e.g. control plane or specific infra nodes)
-#             # "tolerations": [
-#             #    {"key": "CriticalAddonsOnly", "operator": "Exists"}
-#             # ],
-#         }
-#     ), opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[
-#         cas_sa, efs_storage_class # Depends on SA and other k8s resources being ready
-#     ]))
-
-
-
-# # 5. Velero
-# velero_s3_bucket = aws.s3.BucketV2(f"{project_name}-velero-backups",
-#     bucket=velero_s3_bucket_name,
-#     tags=create_common_tags("velero-backups"))
-
-# aws.s3.BucketPublicAccessBlock(f"{project_name}-velero-backups-public-access",
-#     bucket=velero_s3_bucket.id,
-#     block_public_acls=True,
-#     block_public_policy=True,
-#     ignore_public_acls=True,
-#     restrict_public_buckets=True)
-
-# velero_iam_user = aws.iam.User(f"{project_name}-velero-user", name=f"{project_name}-velero")
-
-# velero_policy_json = pulumi.Output.all(bucket_name=velero_s3_bucket.bucket).apply(lambda args: json.dumps({
-#     "Version": "2012-10-17",
-#     "Statement": [
-#         {
-#             "Effect": "Allow",
-#             "Action": [
-#                 "ec2:DescribeVolumes", "ec2:DescribeSnapshots", "ec2:CreateTags",
-#                 "ec2:CreateVolume", "ec2:CreateSnapshot", "ec2:DeleteSnapshot"
-#             ],
-#             "Resource": "*"
-#         },
-#         {
-#             "Effect": "Allow",
-#             "Action": [
-#                 "s3:GetObject", "s3:DeleteObject", "s3:PutObject",
-#                 "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"
-#             ],
-#             "Resource": [f"arn:aws:s3:::{args['bucket_name']}/*"]
-#         },
-#         {
-#             "Effect": "Allow",
-#             "Action": ["s3:ListBucket"],
-#             "Resource": [f"arn:aws:s3:::{args['bucket_name']}"]
-#         }
-#     ]
-# }))
-
-# velero_iam_policy = aws.iam.Policy(f"{project_name}-velero-policy",
-#     name=f"{project_name}-VeleroBackupPolicy",
-#     policy=velero_policy_json)
-
-# aws.iam.UserPolicyAttachment(f"{project_name}-velero-user-policy-attachment",
-#     user=velero_iam_user.name,
-#     policy_arn=velero_iam_policy.arn)
-
-# velero_access_key = aws.iam.AccessKey(f"{project_name}-velero-access-key", user=velero_iam_user.name)
-
-# # velero_credentials_file_content = pulumi.Output.all(
-# #     key_id=velero_access_key.id,
-# #     secret_key=velero_access_key.secret
-# # ).apply(lambda args: f"[default]\naws_access_key_id={args['key_id']}\naws_secret_access_key={args['secret_key']}")
-
-# velero_namespace = k8s.core.v1.Namespace("velero-ns",
-#     metadata={"name": "velero"},
-#     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
-
-# velero_secret = k8s.core.v1.Secret(
-#     "velero-cloud-credentials",
-#     metadata=k8s.meta.v1.ObjectMetaArgs(
-#         name="cloud-credentials",
-#         namespace=velero_namespace.metadata["name"],
-#     ),
-#     # THE FIX: Use pulumi.Output.all() to get both id and secret together.
-#     string_data={
-#         "cloud": pulumi.Output.all(
-#             id=velero_access_key.id,
-#             secret=velero_access_key.secret
-#         ).apply(
-#             lambda args: f"[default]\naws_access_key_id={args['id']}\naws_secret_access_key={args['secret']}"
-#         )
-#     },
-#     type="Opaque",
-#     opts=pulumi.ResourceOptions(
-#         provider=k8s_provider,
-#         depends_on=[velero_namespace, velero_access_key],
-#         protect=eks_velero_protect
-#     )
-# )
-
-# velero_chart = Chart(f"{project_name}-velero-chart",
-#     ChartOpts(
-#         chart="velero",
-#         version=eks_velero_version,
-#         fetch_opts=FetchOpts(repo="https://vmware-tanzu.github.io/helm-charts"),
-#         namespace=velero_namespace.metadata["name"],
-#         values={
-#              "configuration": {
-#                 "backupStorageLocation": [{
-#                     "name": "default",
-#                     "provider": "aws",
-#                     "bucket": velero_s3_bucket.bucket,
-#                     "config": {
-#                         "region": aws_region
-#                     }
-#                 }],
-#                 "volumeSnapshotLocation": [{
-#                     "name": "default",
-#                     "provider": "aws",
-#                     "config": {
-#                         "region": aws_region
-#                     }
-#                 }]
-#             },
-#             "credentials": {
-#                 "useSecret": True,
-#                 # The name of the k8s.core.v1.Secret resource we created earlier
-#                 "existingSecret": velero_secret.metadata["name"]
-#             },
-#             "snapshotsEnabled": True,
-#             # The `extraPlugins` key is not standard. Plugins are added via initContainers.
-#             # This is the correct way to install the AWS plugin.
-#             "initContainers": [
-#                 {
-#                     "name": "velero-plugin-for-aws",
-#                     "image": "velero/velero-plugin-for-aws:v1.9.0", # Use a recent, compatible version
-#                     "imagePullPolicy": "IfNotPresent",
-#                     "volumeMounts": [{"mountPath": "/target", "name": "plugins"}],
-#                 }
-#             ],
-#             "metrics": {
-#                 "enabled": False
-#             },
-#             # This can be set to false as it is not needed for most backup/restore cases
-#             # and is the source of the webhook error.
-#             "deployNodeAgent": True,
-#         }
-#     ),     
-#     opts=pulumi.ResourceOptions(
-#         provider=k8s_provider,
-#         # --- FIX 2: Add explicit dependency on the LBC chart ---
-#         # This ensures the Velero chart waits until the LBC webhook is fully ready.
-#         depends_on=[
-#             velero_secret,
-#             gp3_storage_class,
-#             # aws_load_balancer_controller_chart # <-- This is the crucial addition for the webhook error
-#         ]
-#     )
-# )
-
-
-
-
-
-
-
-# # ----- [START] REPLACE THE MONITORING BLOCK WITH THIS SIMPLIFIED VERSION -----
-# alert_email_address = config.get("alert_email_address") or "donaldhp.loo@mmh-global.com"
-
-# # --- Monitoring and Alerting Setup (Infrastructure Only) ---
-# # This code only creates the AWS resources (SNS, Alarms). The Kubernetes
-# # agents will be deployed separately using kubectl.
-
-# # 1. Create an SNS Topic for sending email alerts.
-# alerting_sns_topic = aws.sns.Topic(f"{project_name}-alerts-topic",
-#     display_name="EKS Cluster Alerts",
-#     tags=create_common_tags("sns-alerts-topic")
-# )
-
-# # 2. Create an SNS Topic Subscription to send alerts to your email.
-# #    IMPORTANT: You must confirm the subscription email from AWS.
-# email_address_for_alerts = alert_email_address
-# email_subscription = aws.sns.TopicSubscription(f"{project_name}-email-subscription",
-#     topic=alerting_sns_topic.arn,
-#     protocol="email",
-#     endpoint=email_address_for_alerts
-# )
-
-# # --- Define CloudWatch Alarms ---
-# # These alarms watch for metrics from Container Insights. They will remain in an
-# # "Insufficient data" state until you deploy the agents via kubectl. This is expected.
-
-# # Alarm for High Node CPU Utilization
-# node_cpu_alarm = aws.cloudwatch.MetricAlarm(f"{project_name}-node-cpu-high",
-#     name=f"{project_name}-EKSNodeCPUUtilizationHigh",
-#     alarm_description="Alert when EKS node CPU utilization exceeds 80%",
-#     alarm_actions=[alerting_sns_topic.arn],
-#     metric_name="node_cpu_utilization",
-#     namespace="ContainerInsights",
-#     dimensions={"ClusterName": eks_cluster.eks_cluster.name}, # Pulumi correctly provides the cluster name here
-#     comparison_operator="GreaterThanOrEqualToThreshold",
-#     threshold=80, statistic="Average", period=300, evaluation_periods=2,
-#     treat_missing_data="notBreaching", tags=create_common_tags("alarm-node-cpu")
-# )
-
-# # Alarm for High Node Memory Utilization
-# node_memory_alarm = aws.cloudwatch.MetricAlarm(f"{project_name}-node-memory-high",
-#     name=f"{project_name}-EKSNodeMemoryUtilizationHigh",
-#     alarm_description="Alert when EKS node memory utilization exceeds 85%",
-#     alarm_actions=[alerting_sns_topic.arn],
-#     metric_name="node_memory_utilization",
-#     namespace="ContainerInsights",
-#     dimensions={"ClusterName": eks_cluster.eks_cluster.name},
-#     comparison_operator="GreaterThanOrEqualToThreshold",
-#     threshold=85, statistic="Average", period=300, evaluation_periods=2,
-#     treat_missing_data="notBreaching", tags=create_common_tags("alarm-node-memory")
-# )
-
-# # Alarm for Low Node Disk Space
-# node_disk_alarm = aws.cloudwatch.MetricAlarm(f"{project_name}-node-disk-full",
-#     name=f"{project_name}-EKSNodeDiskSpaceLow",
-#     alarm_description="Alert when EKS node disk space utilization exceeds 80%",
-#     alarm_actions=[alerting_sns_topic.arn],
-#     metric_name="node_filesystem_utilization",
-#     namespace="ContainerInsights",
-#     dimensions={"ClusterName": eks_cluster.eks_cluster.name},
-#     comparison_operator="GreaterThanOrEqualToThreshold",
-#     threshold=80, statistic="Average", period=300, evaluation_periods=1,
-#     treat_missing_data="notBreaching", tags=create_common_tags("alarm-node-disk")
-# )
-
-# ----- [END] REPLACEMENT BLOCK -----
-
 
 # --- Outputs ---
 pulumi.export("vpc_id", vpc.vpc_id)
 pulumi.export("vpc_cidr_block", vpc.vpc.cidr_block)
 pulumi.export("public_subnet_ids", vpc.public_subnet_ids)
 pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
-if db_subnets_ids:
-    pulumi.export("db_subnet_ids", db_subnets_ids)
+# if db_subnets_ids:
+#     pulumi.export("db_subnet_ids", db_subnets_ids)
 
-# pulumi.export("waf_acl_arn", web_acl.arn)
+
 
 pulumi.export("eks_cluster_name_pulumi_logical", eks_cluster.name)
 pulumi.export("eks_cluster_resource_name_aws", eks_cluster.eks_cluster.name)
 pulumi.export("eks_cluster_endpoint", eks_cluster.eks_cluster.endpoint)
-pulumi.export("eks_cluster_ca_data", eks_cluster.eks_cluster.certificate_authority.apply(lambda ca: ca.data))
-pulumi.export("kubeconfig", pulumi.Output.secret(kubeconfig))
-pulumi.export("eks_oidc_provider_url", eks_cluster.core.oidc_provider.url.apply(lambda url: url if url else "OIDC_PROVIDER_NOT_YET_AVAILABLE"))
-pulumi.export("eks_oidc_provider_arn", eks_cluster.core.oidc_provider.arn.apply(lambda arn: arn if arn else "OIDC_PROVIDER_NOT_YET_AVAILABLE"))
-pulumi.export("efs_filesystem_id", efs_file_system.id)
-
-# pulumi.export("velero_s3_bucket_name_actual", velero_s3_bucket.bucket)
-# pulumi.export("velero_iam_user_name", velero_iam_user.name)
-# pulumi.export("velero_access_key_id", velero_access_key.id)
-# pulumi.export("velero_secret_access_key", pulumi.Output.secret(velero_access_key.secret))
+# pulumi.export("eks_cluster_ca_data", eks_cluster.eks_cluster.certificate_authority.apply(lambda ca: ca.data))
+# pulumi.export("kubeconfig", pulumi.Output.secret(kubeconfig))
+# pulumi.export("eks_oidc_provider_url", eks_cluster.core.oidc_provider.url.apply(lambda url: url if url else "OIDC_PROVIDER_NOT_YET_AVAILABLE"))
+# pulumi.export("eks_oidc_provider_arn", eks_cluster.core.oidc_provider.arn.apply(lambda arn: arn if arn else "OIDC_PROVIDER_NOT_YET_AVAILABLE"))
+# pulumi.export("efs_filesystem_id", efs_file_system.id)

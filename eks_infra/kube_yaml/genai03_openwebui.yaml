@@ -20,17 +20,19 @@ spec:
     spec:
       initContainers:
         - name: wait-for-postgres
-          image: busybox:1.36
+          image: postgres:15
           command: ['sh', '-c']
           args:
-          - |
-            echo "Waiting for PostgreSQL to be ready..."
-            until nc -zv postgres-0.postgres-svc.chatai.svc.cluster.local 5432; do
-              echo "PostgreSQL not ready yet, sleeping for 5s..."
-              sleep 5
-            done
-            echo "PostgreSQL is ready!"
+            - |
+              echo "Waiting for PostgreSQL to be ready..."
+              # Use pg_isready to check if the database is actually accepting connections.
+              until PGPASSWORD=$PG_PASSWORD pg_isready -h postgres-0.postgres-svc.chatai.svc.cluster.local -p 5432 -U $PG_USER -d $PG_DB; do
+                echo "PostgreSQL not ready yet, sleeping for 5s..."
+                sleep 5
+              done
+              echo "PostgreSQL is ready!"
           env:
+          # --- FIX: These are now spelled correctly as POSTGRES ---
           - name: PG_USER
             valueFrom:
               secretKeyRef:
@@ -160,8 +162,9 @@ metadata:
     # cert-manager.io/cluster-issuer: letsencrypt-staging
     # For production, you'll change it to:
     # cert-manager.io/cluster-issuer: letsencrypt-prod
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]' # Ensure ALB listens on 443
-    alb.ingress.kubernetes.io/ssl-redirect: '443' # Optional: Redirect HTTP to HTTPS
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]' # Ensure ALB listens on 443
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]' # Ensure ALB listens on 443
+    # alb.ingress.kubernetes.io/ssl-redirect: '443' # Optional: Redirect HTTP to HTTPS
     # cert-manager.io/disable-self-check: "true"
 
     alb.ingress.kubernetes.io/proxy-read-timeout: "33600"
@@ -180,8 +183,8 @@ spec:
       # secretName: chatai-mmh-global-com-tls # cert-manager will create this secret for us
   rules:
     # - host: k8s-chatai-openwebu-dfd767cdbf-1006398550.ap-southeast-1.elb.amazonaws.com
-    - host: chatai.app.mmh-global.com # The hostname for the Ingress
-      http:
+    # - host: chatai.app.mmh-global.com # The hostname for the Ingress
+    - http:
         paths:
           - path: /
             pathType: Prefix
