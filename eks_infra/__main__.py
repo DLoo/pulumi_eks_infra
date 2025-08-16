@@ -16,7 +16,7 @@ project_name = config.require("project_name")
 aws_region = aws.get_region().name
 eks_cluster_name = config.get("eks_cluster_name") or f"{project_name}-cluster"
 vpc_cidr = config.require("vpc_cidr")
-eks_cluster_version = config.get("eks_cluster_version") or "1.32"
+eks_cluster_version = config.get("eks_cluster_version") or "1.33"
 eks_ebs_csi_driver_version = config.get("eks_ebs_csi_driver_version") or "v1.44.0-eksbuild.1"
 eks_efs_csi_driver_version = config.get("eks_efs_csi_driver_version") or " 3.1.9"
 eks_volume_snapshotter_version = config.get("eks_volume_snapshotter_version") or "4.1.0"
@@ -132,6 +132,8 @@ vpc = awsx.ec2.Vpc(f"{project_name}-vpc",
     cidr_block=vpc_cidr,
     availability_zone_names=availability_zones,
     subnet_specs=subnet_specs,
+    enable_dns_support=True,
+    enable_dns_hostnames=True,
     nat_gateways=awsx.ec2.NatGatewayConfigurationArgs(
         strategy=awsx.ec2.NatGatewayStrategy.ONE_PER_AZ
     ),
@@ -248,6 +250,28 @@ eks_cluster = eks.Cluster(f"{project_name}-eks",
 kubeconfig = eks_cluster.kubeconfig
 k8s_provider = k8s.Provider(f"{project_name}-k8s-provider", kubeconfig=kubeconfig)
 
+# # ==============================================================================
+# # --- NEW: ADD A SECOND MANAGED NODE GROUP ---
+# # ==============================================================================
+# m5_large_node_group = eks.ManagedNodeGroup(f"{project_name}-m5-large-ng",
+#     cluster=eks_cluster, # Associate with our existing cluster
+#     node_group_name=f"{project_name}-m5-large-nodes",
+#     instance_types=["m5.large"],
+#     scaling_config=aws.eks.NodeGroupScalingConfigArgs(
+#         desired_size=1,
+#         min_size=1,
+#         max_size=4,
+#     ),
+#     # By default, this uses the `instance_role` from the `eks.Cluster` resource.
+#     # You could specify a different one with `node_role=...` if needed.
+#     subnet_ids=vpc.private_subnet_ids, # Deploy nodes into the private subnets
+#     labels={"workload-type": "general-purpose", "instance-type": "m5-large"},
+#     tags=create_common_tags("m5-large-ng"),
+#     opts=pulumi.ResourceOptions(
+#         provider=k8s_provider, # Ensure it uses the correct k8s provider
+#         depends_on=[eks_cluster]
+#     )
+# )
 
 
 # ==============================================================================
@@ -924,7 +948,7 @@ efs_storage_class = k8s.storage.v1.StorageClass("efs-sc",
 
 # --- Outputs ---
 pulumi.export("vpc_id", vpc.vpc_id)
-pulumi.export("vpc_cidr_block", vpc.vpc.cidr_block)
+# pulumi.export("vpc_cidr_block", vpc.vpc.cidr_block)
 pulumi.export("public_subnet_ids", vpc.public_subnet_ids)
 pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
 # if db_subnets_ids:
@@ -932,9 +956,9 @@ pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
 
 
 
-pulumi.export("eks_cluster_name_pulumi_logical", eks_cluster.name)
-pulumi.export("eks_cluster_resource_name_aws", eks_cluster.eks_cluster.name)
-pulumi.export("eks_cluster_endpoint", eks_cluster.eks_cluster.endpoint)
+# pulumi.export("eks_cluster_name_pulumi_logical", eks_cluster.name)
+# pulumi.export("eks_cluster_resource_name_aws", eks_cluster.eks_cluster.name)
+# pulumi.export("eks_cluster_endpoint", eks_cluster.eks_cluster.endpoint)
 # pulumi.export("eks_cluster_ca_data", eks_cluster.eks_cluster.certificate_authority.apply(lambda ca: ca.data))
 # pulumi.export("kubeconfig", pulumi.Output.secret(kubeconfig))
 # pulumi.export("eks_oidc_provider_url", eks_cluster.core.oidc_provider.url.apply(lambda url: url if url else "OIDC_PROVIDER_NOT_YET_AVAILABLE"))
