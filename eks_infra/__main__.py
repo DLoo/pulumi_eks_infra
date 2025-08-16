@@ -99,49 +99,55 @@ if not (node_config["min_count"] <= node_config["desired_count"] <= node_config[
 
 velero_s3_bucket_name = config.require("velero_s3_bucket_name")
 
-# --- Networking ---
-subnet_specs = []
-if validate_subnet_cidrs(public_subnet_cidrs, len(availability_zones), "public"):
-    subnet_specs.append(awsx.ec2.SubnetSpecArgs(
+
+# ==============================================================================
+# --- NETWORKING (ENHANCED) ---
+# ==============================================================================
+
+# 1. Define all subnet specifications together.
+# We'll now treat "db" subnets as just another type of private subnet.
+all_private_subnet_cidrs = private_subnet_cidrs + db_subnet_cidrs
+
+subnet_specs = [
+    awsx.ec2.SubnetSpecArgs(
         type=awsx.ec2.SubnetType.PUBLIC,
         cidr_blocks=public_subnet_cidrs,
         name="public"
-    ))
-
-if validate_subnet_cidrs(private_subnet_cidrs, len(availability_zones), "private"):
-    subnet_specs.append(awsx.ec2.SubnetSpecArgs(
+    ),
+    # Define a single private subnet group that includes both app and db CIDRs.
+    awsx.ec2.SubnetSpecArgs(
         type=awsx.ec2.SubnetType.PRIVATE,
-        cidr_blocks=private_subnet_cidrs,
-        name="private"
-    ))
+        cidr_blocks=all_private_subnet_cidrs,
+        name="private" # This name is used for tagging and route table creation
+    )
+]
 
-
+# 2. Create the VPC using the consolidated subnet specs.
 vpc = awsx.ec2.Vpc(f"{project_name}-vpc",
     cidr_block=vpc_cidr,
     availability_zone_names=availability_zones,
-    subnet_specs=subnet_specs if subnet_specs else None,
+    subnet_specs=subnet_specs,
+    # The awsx.Vpc component automatically creates one NAT Gateway per AZ
+    # and a single route table for all private subnets, which is exactly
+    # what we want to solve the routing issue.
     nat_gateways=awsx.ec2.NatGatewayConfigurationArgs(
         strategy=awsx.ec2.NatGatewayStrategy.ONE_PER_AZ
-    ) if validate_subnet_cidrs(private_subnet_cidrs, len(availability_zones), "private") else None,
+    ),
     tags=create_common_tags("vpc"))
 
-db_subnets_ids = []
-if db_subnet_cidrs:
-    for i, cidr in enumerate(db_subnet_cidrs):
-        az = availability_zones[i % len(availability_zones)]
-        db_subnet = aws.ec2.Subnet(f"{project_name}-db-subnet-{i}",
-            vpc_id=vpc.vpc_id,
-            cidr_block=cidr,
-            availability_zone=az,
-            tags=create_common_tags(f"db-subnet-{az.split('-')[-1]}", {"Tier": "Database"}))
-        db_subnets_ids.append(db_subnet.id)
 
-if db_subnets_ids:
+# 3. Create the RDS Subnet Group using the IDs of the DB subnets from the VPC component.
+# The `awsx.Vpc` component outputs all created subnets. We can filter them.
+db_subnet_ids = []
+if db_subnet_cidrs:
+    db_subnet_ids = vpc.private_subnet_ids.apply(
+        lambda ids: [s.id for s in vpc.get_subnets(awsx.ec2.SubnetType.PRIVATE) if s.cidr_block in db_subnet_cidrs]
+    )
+
     db_subnet_group = aws.rds.SubnetGroup(f"{project_name}-db-sng",
-        subnet_ids=db_subnets_ids,
+        subnet_ids=db_subnet_ids,
         tags=create_common_tags("db-sng"))
     pulumi.export("db_subnet_group_name", db_subnet_group.name)
-
 
 
 
@@ -227,31 +233,6 @@ eks_cluster = eks.Cluster(f"{project_name}-eks",
         max_size=node_config["max_count"],
         labels={"ondemand": "true"}
     ),
-    
-    # # 1. Enable EKS Auto Mode.
-    # auto_mode=eks.AutoModeOptionsArgs(
-    #     enabled=True
-    # ),
-
-    # # 2. Set the authentication mode as required by the error message.
-    # # API_AND_CONFIG_MAP is a safe choice for compatibility.
-    # authentication_mode=eks.AuthenticationMode.API_AND_CONFIG_MAP,
-
-    # # 3. Provide the required access entry. We grant the Pulumi executor
-    # # administrative access to the cluster.
-    # access_entries={
-    #     "creator-admin-access": eks.AccessEntryArgs(
-    #         principal_arn=current_identity.arn,
-    #         access_policies={
-    #             "eks-admin-policy": eks.AccessPolicyAssociationArgs(
-    #                 policy_arn="arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminPolicy",
-    #                 access_scope=aws.eks.AccessPolicyAssociationAccessScopeArgs(
-    #                     type="cluster"
-    #                 ),
-    #             )
-    #         }
-    #     )
-    # },
         
     opts=pulumi.ResourceOptions(
         protect=eks_cluster_protect,
