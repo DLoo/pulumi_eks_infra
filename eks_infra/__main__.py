@@ -12,7 +12,7 @@ import requests
 
 # --- Configuration ---
 config = pulumi.Config()
-project_name = config.require("project_name")
+project_name = config.require("project_name") + "-" + pulumi.get_stack()
 aws_region = aws.get_region().name
 eks_cluster_name = config.get("eks_cluster_name") or f"{project_name}-cluster"
 vpc_cidr = config.require("vpc_cidr")
@@ -233,13 +233,14 @@ eks_cluster = eks.Cluster(f"{project_name}-eks",
     version=eks_cluster_version,
     enabled_cluster_log_types=["api", "audit", "authenticator", "controllerManager", "scheduler"],
     tags=create_common_tags("eks"),
-    node_group_options=eks.ClusterNodeGroupOptionsArgs(
-        instance_type=primary_instance_type,
-        desired_capacity=node_config["desired_count"],
-        min_size=node_config["min_count"],
-        max_size=node_config["max_count"],
-        labels={"ondemand": "true"}
-    ),
+    skip_default_node_group=True,
+    # node_group_options=eks.ClusterNodeGroupOptionsArgs(
+    #     instance_type=primary_instance_type,
+    #     desired_capacity=node_config["desired_count"],
+    #     min_size=node_config["min_count"],
+    #     max_size=node_config["max_count"],
+    #     labels={"ondemand": "true"}
+    # ),
         
     opts=pulumi.ResourceOptions(
         protect=eks_cluster_protect,
@@ -250,28 +251,51 @@ eks_cluster = eks.Cluster(f"{project_name}-eks",
 kubeconfig = eks_cluster.kubeconfig
 k8s_provider = k8s.Provider(f"{project_name}-k8s-provider", kubeconfig=kubeconfig)
 
-# # ==============================================================================
-# # --- NEW: ADD A SECOND MANAGED NODE GROUP ---
-# # ==============================================================================
-# m5_large_node_group = eks.ManagedNodeGroup(f"{project_name}-m5-large-ng",
-#     cluster=eks_cluster, # Associate with our existing cluster
-#     node_group_name=f"{project_name}-m5-large-nodes",
-#     instance_types=["m5.large"],
-#     scaling_config=aws.eks.NodeGroupScalingConfigArgs(
-#         desired_size=1,
-#         min_size=1,
-#         max_size=4,
-#     ),
-#     # By default, this uses the `instance_role` from the `eks.Cluster` resource.
-#     # You could specify a different one with `node_role=...` if needed.
-#     subnet_ids=vpc.private_subnet_ids, # Deploy nodes into the private subnets
-#     labels={"workload-type": "general-purpose", "instance-type": "m5-large"},
-#     tags=create_common_tags("m5-large-ng"),
-#     opts=pulumi.ResourceOptions(
-#         provider=k8s_provider, # Ensure it uses the correct k8s provider
-#         depends_on=[eks_cluster]
-#     )
-# )
+# ==============================================================================
+# --- MANAGED NODE GROUPS (Following Official Pulumi Pattern) ---
+# ==============================================================================
+
+# 1. Create the primary node group that replaces the old "default" one.
+#    It will automatically use the cluster's shared security group.
+primary_node_group = eks.ManagedNodeGroup(f"{project_name}-primary-ng",
+    cluster=eks_cluster, # Associate with our cluster
+    node_group_name=f"{project_name}-primary-nodes",
+    node_role=eks_node_instance_role, # Use the role you already defined
+    instance_types=node_config["instance_types"],
+    scaling_config=aws.eks.NodeGroupScalingConfigArgs(
+        desired_size=node_config["desired_count"],
+        min_size=node_config["min_count"],
+        max_size=node_config["max_count"],
+    ),
+    subnet_ids=vpc.private_subnet_ids,
+    labels={"ondemand": "true", "workload-type": "primary"},
+    tags=create_common_tags("primary-ng"),
+    opts=pulumi.ResourceOptions(
+        depends_on=[eks_cluster]
+    )
+)
+
+# 2. Create your second node group. It's now a simple, repeatable pattern.
+#    It will also automatically use the same shared security group.
+m5_large_node_group = eks.ManagedNodeGroup(f"{project_name}-m5-large-ng",
+    cluster=eks_cluster, # Associate with the SAME cluster
+    node_group_name=f"{project_name}-m5-large-nodes",
+    node_role=eks_node_instance_role, # Use the SAME role
+    instance_types=["m5.large"],
+    scaling_config=aws.eks.NodeGroupScalingConfigArgs(
+        desired_size=node_config["desired_count"],
+        min_size=node_config["min_count"],
+        max_size=node_config["max_count"],
+    ),
+    subnet_ids=vpc.private_subnet_ids,
+    labels={"workload-type": "general-purpose", "instance-type": "m5-large"},
+    tags=create_common_tags("m5-large-ng"),
+    opts=pulumi.ResourceOptions(
+        depends_on=[eks_cluster]
+    )
+)
+
+
 
 
 # ==============================================================================
