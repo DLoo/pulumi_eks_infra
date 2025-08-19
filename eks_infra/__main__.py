@@ -26,6 +26,7 @@ eks_aws_load_balancer_controller_version = config.get("eks_aws_load_balancer_con
 eks_cluster_autoscaler_version = config.get("eks_cluster_autoscaler_version") or "9.46.6" # Helm chart version for CAS
 eks_velero_aws_plugin_version = config.require("eks_velero_aws_plugin_version")
 route53_hosted_zone_id = config.require("route53_hosted_zone_id")
+external_dns_domains = config.require_object("external_dns_domains")
 
 eks_efs_protect = config.get_bool("eks_efs_protect") if config.get("eks_efs_protect") is not None else True
 eks_cluster_protect = config.get_bool("eks_cluster_protect") if config.get("eks_cluster_protect") is not None else False
@@ -850,7 +851,7 @@ external_dns_chart = Chart("external-dns",
                 "region": aws_region
             },
             # IMPORTANT: This prevents ExternalDNS from touching domains it shouldn't
-            "domainFilters": ["app.mmh-global.com"],
+            "domainFilters": external_dns_domains,
             # IMPORTANT: This creates a TXT record to identify records managed by this instance
             "txtOwnerId": route53_hosted_zone_id
         }

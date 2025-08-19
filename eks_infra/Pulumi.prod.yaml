@@ -18,10 +18,10 @@ config:
     - ap-southeast-1b
   eks_infra:eks_node_instance_types:           
     # - t3.medium
-    - t3.large
-  eks_infra:eks_node_desired_count: "2"        
-  eks_infra:eks_node_min_count: "2"            
-  eks_infra:eks_node_max_count: "5"            
+    - m5.large
+  eks_infra:eks_node_desired_count: "1"        
+  eks_infra:eks_node_min_count: "1"            
+  eks_infra:eks_node_max_count: "4"            
   eks_infra:velero_s3_bucket_name: "mmh-sg-s3" 
   # The duplicate eks_infra:project_name at the end has been removed.
 
@@ -44,4 +44,7 @@ config:
   eks_infra:letsencrypt_email_address: "it.admin@mmh-global.com"
 
   eks_infra:route53_hosted_zone_id: "Z09700871FJ2A2TMV67BU"
+  eks_infra:external_dns_domains:
+    - app.mmh-global.com
+    - api.mmh-global.com
   

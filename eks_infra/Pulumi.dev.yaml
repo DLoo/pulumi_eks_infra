@@ -43,5 +43,8 @@ config:
   eks_infra:alert_email_address: "donaldhp.loo@mmh-global.com"
   eks_infra:letsencrypt_email_address: "it.admin@mmh-global.com"
 
-  eks_infra:route53_hosted_zone_id: "Z07532792EUKKLNE0MSDP"
+  eks_infra:route53_hosted_zone_id: "Z0981669167HUP16OXPJR"
+  eks_infra:external_dns_domains:
+    - dev-app.mmh-global.com
+    - dev-api.mmh-global.com
   

@@ -170,7 +170,7 @@ metadata:
     # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:353654036991:certificate/924f968f-9d5f-4d2b-9726-26bc0c80a17d
     
     # chatai.dev-app.mmh-global.com
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:806342426990:certificate/094b0f7f-fea7-40fc-b0a6-ec42d8bf6bbf
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:806342426990:certificate/59efa145-9648-457e-8992-6938f377d86f
 
     # cert-manager.io/disable-self-check: "true"
 
