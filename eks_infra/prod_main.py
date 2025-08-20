@@ -2,7 +2,7 @@ from typing import List, Optional, Dict, Any
 import pulumi
 from pulumi import Input, Output
 import pulumi_aws as aws
-import pulumi_awsx as awsx
+# import pulumi_awsx as awsx
 import pulumi_eks as eks
 import pulumi_kubernetes as k8s
 from pulumi_kubernetes.helm.v3 import Chart, ChartOpts, FetchOpts
@@ -10,14 +10,14 @@ import pulumi_kubernetes.yaml # Required for ConfigGroup
 import json
 import requests
 
-# --- Configuration ---
 config = pulumi.Config()
 project_name = config.require("project_name") + "-" + pulumi.get_stack()
-aws_region = aws.get_region().name
+aws_region = aws.get_region().region
 eks_cluster_name = config.get("eks_cluster_name") or f"{project_name}-cluster"
-vpc_cidr = config.require("vpc_cidr")
-
-
+existing_vpc_id = config.require("existing_vpc_id")
+existing_public_subnet_ids = config.require_object("existing_public_subnet_ids")
+existing_private_subnet_ids = config.require_object("existing_private_subnet_ids")
+# vpc_cidr = config.require("vpc_cidr")
 
 eks_cluster_version = config.get("eks_cluster_version") or "1.33"
 eks_cloudwatch_observability_version = config.get("eks_cloudwatch_observability_version") or "v4.3.1-eksbuild.1"
@@ -27,10 +27,11 @@ eks_volume_snapshotter_version = config.get("eks_volume_snapshotter_version") or
 eks_cert_manager_version = config.get("eks_cert_manager_version") or "v1.18.0"
 eks_velero_version = config.get("eks_velero_version") or "10.0.4"
 eks_aws_load_balancer_controller_version = config.get("eks_aws_load_balancer_controller_version") or "1.13.4"
-eks_cluster_autoscaler_version = config.get("eks_cluster_autoscaler_version") or "9.46.6" # Helm chart version for CAS
-eks_velero_aws_plugin_version = config.require("eks_velero_aws_plugin_version")
+# eks_cluster_autoscaler_version = config.get("eks_cluster_autoscaler_version") or "9.46.6" # Helm chart version for CAS
+# eks_velero_aws_plugin_version = config.require("eks_velero_aws_plugin_version")
 route53_hosted_zone_id = config.require("route53_hosted_zone_id")
 external_dns_domains = config.require_object("external_dns_domains")
+
 
 eks_efs_protect = config.get_bool("eks_efs_protect") if config.get("eks_efs_protect") is not None else True
 eks_cluster_protect = config.get_bool("eks_cluster_protect") if config.get("eks_cluster_protect") is not None else False
@@ -38,17 +39,16 @@ eks_velero_protect = config.get_bool("eks_velero_protect") if config.get("eks_ve
 
 
 
-def validate_subnet_cidrs(subnet_cidrs: List[str], az_count: int, subnet_type: str) -> bool:
-    """Validate subnet CIDR configuration against availability zones."""
-    if not subnet_cidrs:
-        return False
-    if len(subnet_cidrs) != az_count:
-        pulumi.log.warn(
-            f"Number of {subnet_type}_subnet_cidrs ({len(subnet_cidrs)}) "
-            f"does not match number of availability_zones ({az_count})"
-        )
-        return False
-    return True
+
+
+
+
+
+
+
+
+
+
 
 def create_common_tags(name: str, additional_tags: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """Create a consistent set of tags for resources."""
@@ -62,33 +62,24 @@ def create_common_tags(name: str, additional_tags: Optional[Dict[str, str]] = No
         tags.update(additional_tags)
     return tags
 
-# Error handling helper
-def handle_resource_error(resource_name: str, e: Exception) -> None:
-    """Centralized error handling for resource creation."""
-    pulumi.log.error(f"Error creating {resource_name}: {str(e)}")
-    raise e
-
-def create_secret_string(key_id: str, secret_key: str) -> str:
-    """Create a properly formatted credentials file content."""
-    return f"""[default]
-aws_access_key_id={key_id}
-aws_secret_access_key={secret_key}
-"""
 
 
-# Validate CIDR format
-if not vpc_cidr.strip() or not vpc_cidr.count('/') == 1:
-    raise ValueError(f"Invalid VPC CIDR format: {vpc_cidr}")
 
-# Type-safe configuration loading
-public_subnet_cidrs: List[str] = config.require_object("public_subnet_cidrs")
-private_subnet_cidrs: List[str] = config.require_object("private_subnet_cidrs")
-db_subnet_cidrs: List[str] = config.get_object("db_subnet_cidrs") or []
-availability_zones: List[str] = config.require_object("availability_zones")
 
-# Validate availability zones
-if not availability_zones:
-    raise ValueError("At least one availability zone must be specified")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Node configuration with defaults
 node_config = {
@@ -98,69 +89,11 @@ node_config = {
     "max_count": config.get_int("eks_node_max_count") or 3,
 }
 
-# Validate node counts
-if not (node_config["min_count"] <= node_config["desired_count"] <= node_config["max_count"]):
-    raise ValueError("Invalid node count configuration: min <= desired <= max must be true")
 
-velero_s3_bucket_name = config.require("velero_s3_bucket_name")
+vpc = aws.ec2.get_vpc(id=existing_vpc_id)
 
 
-# ==============================================================================
-# --- NETWORKING (ENHANCED) ---
-# ==============================================================================
 
-# 1. Define separate subnet specifications for each type.
-subnet_specs = [
-    awsx.ec2.SubnetSpecArgs(
-        type=awsx.ec2.SubnetType.PUBLIC,
-        cidr_blocks=public_subnet_cidrs,
-        name="public"
-    ),
-    awsx.ec2.SubnetSpecArgs(
-        type=awsx.ec2.SubnetType.PRIVATE,
-        cidr_blocks=private_subnet_cidrs,
-        name="private-app"
-    ),
-]
-
-# if db_subnet_cidrs:
-#     subnet_specs.append(
-#         awsx.ec2.SubnetSpecArgs(
-#             type=awsx.ec2.SubnetType.PRIVATE,
-#             cidr_blocks=db_subnet_cidrs,
-#             name="private-db"
-#         )
-#     )
-
-# 2. Create the VPC using the corrected subnet specs.
-vpc = awsx.ec2.Vpc(f"{project_name}-vpc",
-    cidr_block=vpc_cidr,
-    availability_zone_names=availability_zones,
-    subnet_specs=subnet_specs,
-    enable_dns_support=True,
-    enable_dns_hostnames=True,
-    nat_gateways=awsx.ec2.NatGatewayConfigurationArgs(
-        strategy=awsx.ec2.NatGatewayStrategy.ONE_PER_AZ
-    ),
-    tags=create_common_tags("vpc"))
-
-
-# # ==============================================================================
-# # --- 3. CREATE THE RDS SUBNET GROUP (CORRECTED LOGIC) ---
-# # ==============================================================================
-# db_subnet_ids_output = None
-# if db_subnet_cidrs:
-#     # The `vpc.private_subnets` is an Output that will resolve to a list of subnet objects.
-#     # We apply a transformation to this list to filter it.
-#     db_subnet_ids_output = vpc.private_subnets.apply(
-#         lambda subnets: [s.id for s in subnets if s.cidr_block in db_subnet_cidrs]
-#     )
-
-#     db_subnet_group = aws.rds.SubnetGroup(f"{project_name}-db-sng",
-#         # We pass the Output directly to the subnet_ids property.
-#         subnet_ids=db_subnet_ids_output,
-#         tags=create_common_tags("db-sng"))
-#     pulumi.export("db_subnet_group_name", db_subnet_group.name)
 
 
 
@@ -231,9 +164,9 @@ eks_cluster = eks.Cluster(f"{project_name}-eks",
     name=eks_cluster_name,
     service_role=eks_service_role,
     instance_role=eks_node_instance_role,
-    vpc_id=vpc.vpc_id,
-    public_subnet_ids=vpc.public_subnet_ids,
-    private_subnet_ids=vpc.private_subnet_ids,
+    vpc_id=vpc.id,
+    public_subnet_ids=existing_public_subnet_ids,
+    private_subnet_ids=existing_private_subnet_ids,
     create_oidc_provider=True,
     version=eks_cluster_version,
     enabled_cluster_log_types=["api", "audit", "authenticator", "controllerManager", "scheduler"],
@@ -250,11 +183,12 @@ eks_cluster = eks.Cluster(f"{project_name}-eks",
     opts=pulumi.ResourceOptions(
         protect=eks_cluster_protect,
         delete_before_replace=False,
-        depends_on=[vpc]
+        # depends_on=[vpc]
     ))
 
 kubeconfig = eks_cluster.kubeconfig
 k8s_provider = k8s.Provider(f"{project_name}-k8s-provider", kubeconfig=kubeconfig)
+
 
 # ==============================================================================
 # --- MANAGED NODE GROUPS (Following Official Pulumi Pattern) ---
@@ -272,7 +206,7 @@ primary_node_group = eks.ManagedNodeGroup(f"{project_name}-primary-ng",
         min_size=node_config["min_count"],
         max_size=node_config["max_count"],
     ),
-    subnet_ids=vpc.private_subnet_ids,
+    subnet_ids=existing_private_subnet_ids,
     labels={"ondemand": "true", "workload-type": "primary"},
     tags=create_common_tags("primary-ng"),
     opts=pulumi.ResourceOptions(
@@ -292,13 +226,16 @@ m5_large_node_group = eks.ManagedNodeGroup(f"{project_name}-m5-large-ng",
         min_size=node_config["min_count"],
         max_size=node_config["max_count"],
     ),
-    subnet_ids=vpc.private_subnet_ids,
+    subnet_ids=existing_private_subnet_ids,
     labels={"workload-type": "general-purpose", "instance-type": "m5-large"},
     tags=create_common_tags("m5-large-ng"),
     opts=pulumi.ResourceOptions(
         depends_on=[eks_cluster]
     )
 )
+
+
+
 
 
 
@@ -587,16 +524,6 @@ aws.iam.RolePolicyAttachment(f"{project_name}-ebs-csi-irsa-policy-attachment",
     role=ebs_csi_irsa_role.name,
     policy_arn=ebs_csi_policy.arn)
 
-# # Now, update the Addon to use the role we just created.
-# ebs_csi_driver_addon = eks.Addon(f"{project_name}-ebs-csi-driver",
-#     cluster=eks_cluster,
-#     addon_name="aws-ebs-csi-driver",
-#     addon_version=eks_ebs_csi_driver_version,
-#     # --- FIX: Associate the IRSA role with the addon ---
-#     service_account_role_arn=ebs_csi_irsa_role.arn,
-#     # ---
-#     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
-
 
 
 # ==============================================================================
@@ -648,6 +575,10 @@ gp3_storage_class = k8s.storage.v1.StorageClass("gp3-storage-class",
     allow_volume_expansion=True,
     reclaim_policy="Delete",
     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[ebs_csi_driver_addon]))
+
+
+
+
 
 
 
@@ -753,7 +684,7 @@ aws_load_balancer_controller_chart = Chart(f"{project_name}-lbc-chart",
                 }
             },
             "region": aws_region,
-            "vpcId": vpc.vpc_id,
+            "vpcId": vpc.id,
             "rbac": {
                 "create": True,
                 # "extraRules": [
@@ -892,18 +823,16 @@ efs_file_system = aws.efs.FileSystem(f"{project_name}-efs",
 
 # 3. Create the EFS Mount Targets in each private subnet.
 #    This now uses the dedicated EFS security group.
-efs_mount_targets = vpc.private_subnet_ids.apply(
-    lambda subnet_ids: [
-        aws.efs.MountTarget(
-            f"{project_name}-efs-mount-{i}",
-            file_system_id=efs_file_system.id,
-            subnet_id=subnet_id,
-            # FIX: Use the dedicated EFS security group instead of the node group.
-            security_groups=[efs_security_group.id]
-        )
-        for i, subnet_id in enumerate(subnet_ids)
-    ]
-)
+efs_mount_targets = []
+for i, subnet_id in enumerate(existing_private_subnet_ids):
+    mount_target = aws.efs.MountTarget(
+        f"{project_name}-efs-mount-{i}",
+        file_system_id=efs_file_system.id,
+        subnet_id=subnet_id,
+        # eks_cluster.node_security_group is a convenient output from the high-level eks.Cluster component
+        security_groups=[efs_security_group.id]
+    )
+    efs_mount_targets.append(mount_target)
 
 
 # This policy is sufficient for both controller and node components.
@@ -1002,7 +931,6 @@ efs_storage_class = k8s.storage.v1.StorageClass("efs-sc",
 
 
 
-
 # ==============================================================================
 # --- AMAZON CLOUDWATCH OBSERVABILITY ADD-ON ---
 # ==============================================================================
@@ -1065,20 +993,17 @@ cloudwatch_observability_addon = eks.Addon(f"{project_name}-cloudwatch-observabi
 
 
 
-
 # --- Outputs ---
-pulumi.export("vpc_id", vpc.vpc_id)
+pulumi.export("vpc_id", vpc.id)
 # pulumi.export("vpc_cidr_block", vpc.vpc.cidr_block)
-pulumi.export("public_subnet_ids", vpc.public_subnet_ids)
-pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
+# pulumi.export("public_subnet_ids", vpc.public_subnet_ids)
+# pulumi.export("private_subnet_ids", vpc.private_subnet_ids)
 # if db_subnets_ids:
 #     pulumi.export("db_subnet_ids", db_subnets_ids)
 
 
 
-# pulumi.export("eks_cluster_name_pulumi_logical", eks_cluster.name)
-# pulumi.export("eks_cluster_resource_name_aws", eks_cluster.eks_cluster.name)
-# pulumi.export("eks_cluster_endpoint", eks_cluster.eks_cluster.endpoint)
+
 # pulumi.export("eks_cluster_ca_data", eks_cluster.eks_cluster.certificate_authority.apply(lambda ca: ca.data))
 # pulumi.export("kubeconfig", pulumi.Output.secret(kubeconfig))
 # pulumi.export("eks_oidc_provider_url", eks_cluster.core.oidc_provider.url.apply(lambda url: url if url else "OIDC_PROVIDER_NOT_YET_AVAILABLE"))
