@@ -1,0 +1,62 @@
+---
+# 6. An Ingress to expose the Service to the internet via an AWS ALB
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: open-webui-ingress
+  namespace: chatai
+  annotations:
+    # This tells Kubernetes to use the AWS Load Balancer Controller
+    # kubernetes.io/ingress.class: alb
+    # alb.ingress.kubernetes.io/group.name: "mmh-sg-iha-alb" 
+    # Give this rule a lower priority so the ACME rule is checked first.
+    # "alb.ingress.kubernetes.io/group.order": "10"
+    # This defines the scheme of the load balancer
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    # alb.ingress.kubernetes.io/scheme: internal
+    # This defines the type of traffic the ALB will listen for
+    alb.ingress.kubernetes.io/target-type: ip
+    # Associates our AWS WAF WebACL with the Application Load Balancer.
+    # alb.ingress.kubernetes.io/wafv2-acl-arn: "arn:aws:wafv2:ap-southeast-1:806342426990:regional/webacl/eks-mmh-sg-web-acl/be062b91-ea1e-4fc0-91d0-1470464a3fcd"
+
+    # Use the Let's Encrypt staging issuer first for testing
+    # cert-manager.io/cluster-issuer: letsencrypt-staging
+    # For production, you'll change it to:
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]' # Ensure ALB listens on 443
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]' # Ensure ALB listens on 443
+    alb.ingress.kubernetes.io/ssl-redirect: '443' # Optional: Redirect HTTP to HTTPS
+    
+    # chatai.app.mmh-global.com
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:353654036991:certificate/924f968f-9d5f-4d2b-9726-26bc0c80a17d
+    
+    # chatai.dev-app.mmh-global.com
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:806342426990:certificate/b5115dae-f291-42f2-b788-200601200add
+
+    # cert-manager.io/disable-self-check: "true"
+
+    alb.ingress.kubernetes.io/proxy-read-timeout: "33600"
+    alb.ingress.kubernetes.io/proxy-send-timeout: "33600"
+    # alb.ingress.kubernetes.io/rewrite-target: /
+
+spec:
+  ingressClassName: alb
+  # This section enables TLS on the ALB using the cert from cert-manager
+  # tls:
+  #   - hosts:
+  #     - chatai.app.mmh-global.com 
+  #     secretName: chatai-tls-secret # cert-manager will create this secret for us
+  rules:
+    # - host: k8s-chatai-openwebu-dfd767cdbf-1006398550.ap-southeast-1.elb.amazonaws.com
+    # - host: chatai.app.mmh-global.com # The hostname for the Ingress
+    - host: chatai.dev-app.mmh-global.com # The hostname for the Ingress
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: open-webui-svc
+                port:
+                  number: 80
+         

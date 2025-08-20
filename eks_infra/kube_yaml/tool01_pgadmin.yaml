@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pgadmin-credentials
+  namespace: tools
+type: Opaque
+data:
+  # Replace with your desired email and password, base64 encoded
+  # To encode:
+  # echo -n 'admin@example.com' | base64
+  # echo -n 'MySuperSecretPassword123!' | base64
+  PGADMIN_DEFAULT_EMAIL: ZG9uYWxkaHAubG9vQG1taC1nbG9iYWwuY29t # e.g., my own mmh email
+  PGADMIN_DEFAULT_PASSWORD: RG9uZTgyMTI= # e.g., Done8212
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pgadmin-efs-pvc
+  namespace: tools
+spec:
+  accessModes:
+    - ReadWriteOnce 
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: efs-retain-sc 
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgadmin
+  namespace: tools
+  labels:
+    app: pgadmin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pgadmin
+  template:
+    metadata:
+      labels:
+        app: pgadmin
+      annotations:
+        backup.velero.io/backup-volumes: pgadmin-data
+    spec:
+      containers:
+        - name: pgadmin
+          image: dpage/pgadmin4:latest # Or a specific version e.g., dpage/pgadmin4:8.4
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PGADMIN_DEFAULT_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: pgadmin-credentials
+                  key: PGADMIN_DEFAULT_EMAIL
+            - name: PGADMIN_DEFAULT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pgadmin-credentials
+                  key: PGADMIN_DEFAULT_PASSWORD
+            - name: PGADMIN_LISTEN_PORT # pgAdmin container listens on port 80 by default
+              value: "80"
+            # Optional: If you want pgAdmin to run in server mode without requiring a login for desktop features
+            # - name: PGADMIN_SERVER_MODE
+            #   value: "False" # Set to True if you don't want desktop mode features on the web
+          ports:
+            - name: http
+              containerPort: 80 # Must match PGADMIN_LISTEN_PORT
+              protocol: TCP
+          volumeMounts:
+            - name: pgadmin-data
+              mountPath: /var/lib/pgadmin # pgAdmin stores its data here
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m" # 0.25 CPU core
+            limits:
+              memory: "1Gi"
+              cpu: "1" # 1 CPU core
+      volumes:
+        - name: pgadmin-data
+          persistentVolumeClaim:
+            claimName: pgadmin-efs-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgadmin-svc
+  namespace: tools
+  labels:
+    app: pgadmin
+
+spec:
+  selector:
+    app: pgadmin
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80 # The port the service will listen on (and the Load Balancer)
+      targetPort: 80 # Matches the 'name' of the containerPort in the Deployment
+

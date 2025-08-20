@@ -17,6 +17,7 @@ aws_region = aws.get_region().name
 eks_cluster_name = config.get("eks_cluster_name") or f"{project_name}-cluster"
 vpc_cidr = config.require("vpc_cidr")
 eks_cluster_version = config.get("eks_cluster_version") or "1.33"
+eks_cloudwatch_observability_version = config.get("eks_cloudwatch_observability_version") or "v4.3.1-eksbuild.1"
 eks_ebs_csi_driver_version = config.get("eks_ebs_csi_driver_version") or "v1.44.0-eksbuild.1"
 eks_efs_csi_driver_version = config.get("eks_efs_csi_driver_version") or " 3.1.9"
 eks_volume_snapshotter_version = config.get("eks_volume_snapshotter_version") or "4.1.0"
@@ -861,20 +862,46 @@ external_dns_chart = Chart("external-dns",
 
 
 
-# --- 3. EFS & EFS CSI Driver (IRSA) ---
-efs_file_system = aws.efs.FileSystem(f"{project_name}-efs", tags=create_common_tags("efs"))
+# 1. Create a dedicated Security Group for the EFS file system.
+efs_security_group = aws.ec2.SecurityGroup(f"{project_name}-efs-sg",
+    vpc_id=vpc.vpc_id,
+    description="Allow NFS traffic from EKS nodes to EFS",
+    tags=create_common_tags("efs-sg"),
+    # Define the crucial ingress rule inline.
+    ingress=[{
+            "protocol":"tcp",
+            "from_port":2049, # NFS port
+            "to_port":2049,
+            # This is the key: it allows traffic ONLY from the worker nodes.
+            "security_groups": [eks_cluster.node_security_group_id],
+            "description":"Allow NFS from EKS worker nodes"
+    }],
 
+)
+
+# 2. Create the EFS File System.
+efs_file_system = aws.efs.FileSystem(f"{project_name}-efs",
+    tags=create_common_tags("efs"),
+    # Adding protect is wise for production EFS file systems.
+    opts=pulumi.ResourceOptions(protect=eks_efs_protect)
+)
+
+
+# 3. Create the EFS Mount Targets in each private subnet.
+#    This now uses the dedicated EFS security group.
 efs_mount_targets = vpc.private_subnet_ids.apply(
     lambda subnet_ids: [
         aws.efs.MountTarget(
             f"{project_name}-efs-mount-{i}",
             file_system_id=efs_file_system.id,
             subnet_id=subnet_id,
-            security_groups=[eks_cluster.node_security_group.id]
+            # FIX: Use the dedicated EFS security group instead of the node group.
+            security_groups=[efs_security_group.id]
         )
         for i, subnet_id in enumerate(subnet_ids)
     ]
 )
+
 
 # This policy is sufficient for both controller and node components.
 efs_csi_policy_doc = aws.iam.get_policy_document_output(statements=[aws.iam.GetPolicyDocumentStatementArgs(
@@ -968,6 +995,71 @@ efs_storage_class = k8s.storage.v1.StorageClass("efs-sc",
     provisioner="efs.csi.aws.com",
     parameters={"provisioningMode": "efs-ap", "fileSystemId": efs_file_system.id, "directoryPerms": "700"},
     opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[efs_csi_driver_chart]))
+
+
+
+
+
+# ==============================================================================
+# --- AMAZON CLOUDWATCH OBSERVABILITY ADD-ON ---
+# ==============================================================================
+
+# 1. Define the service account name and namespace the addon will use.
+cloudwatch_sa_name = "cloudwatch-agent"
+# The addon creates its own namespace, 'amazon-cloudwatch'
+cloudwatch_sa_namespace = "amazon-cloudwatch"
+
+# 2. Create the IAM role for the CloudWatch agent service account.
+cloudwatch_observability_irsa_role = aws.iam.Role(f"{project_name}-cloudwatch-observability-irsa-role",
+    assume_role_policy=pulumi.Output.all(
+        oidc_provider_arn=eks_cluster.oidc_provider_arn,
+        oidc_provider_url=eks_cluster.oidc_provider_url
+    ).apply(
+        lambda args: json.dumps({
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Principal": {"Federated": args["oidc_provider_arn"]},
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                    "StringEquals": {
+                        # Condition to only allow the specific service account to assume the role
+                        f"{args['oidc_provider_url'].replace('https://', '')}:sub": f"system:serviceaccount:{cloudwatch_sa_namespace}:{cloudwatch_sa_name}"
+                    }
+                }
+            }]
+        })
+    ),
+    tags=create_common_tags("cloudwatch-observability-irsa-role"),
+    opts=pulumi.ResourceOptions(depends_on=[eks_cluster])
+)
+
+# 3. Attach the necessary AWS managed policy to the role.
+# This policy grants permissions to send metrics and logs to CloudWatch.
+aws.iam.RolePolicyAttachment(f"{project_name}-cloudwatch-observability-policy-attachment",
+    role=cloudwatch_observability_irsa_role.name,
+    policy_arn="arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+)
+
+# 4. Install the 'amazon-cloudwatch-observability' EKS addon.
+cloudwatch_observability_addon = eks.Addon(f"{project_name}-cloudwatch-observability-addon",
+    cluster=eks_cluster,
+    addon_name="amazon-cloudwatch-observability",
+    addon_version=eks_cloudwatch_observability_version,
+    # Associate the IAM role with the addon's service account.
+    service_account_role_arn=cloudwatch_observability_irsa_role.arn,
+    opts=pulumi.ResourceOptions(
+        provider=k8s_provider,
+        # Ensure the role and its policy attachment are created before the addon is installed.
+        depends_on=[
+            eks_cluster,
+            cloudwatch_observability_irsa_role
+        ]
+    )
+)
+
+
+
 
 
 
