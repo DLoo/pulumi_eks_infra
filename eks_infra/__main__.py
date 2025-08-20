@@ -21,7 +21,7 @@ vpc_cidr = config.require("vpc_cidr")
 
 eks_cluster_version = config.get("eks_cluster_version") or "1.33"
 eks_cloudwatch_observability_version = config.get("eks_cloudwatch_observability_version") or "v4.3.1-eksbuild.1"
-eks_ebs_csi_driver_version = config.get("eks_ebs_csi_driver_version") or "v1.44.0-eksbuild.1"
+eks_ebs_csi_driver_version = config.get("eks_ebs_csi_driver_version") or "v1.47.0-eksbuild.1"
 eks_efs_csi_driver_version = config.get("eks_efs_csi_driver_version") or " 3.1.9"
 eks_volume_snapshotter_version = config.get("eks_volume_snapshotter_version") or "4.1.0"
 eks_cert_manager_version = config.get("eks_cert_manager_version") or "v1.18.0"
@@ -102,7 +102,7 @@ node_config = {
 if not (node_config["min_count"] <= node_config["desired_count"] <= node_config["max_count"]):
     raise ValueError("Invalid node count configuration: min <= desired <= max must be true")
 
-velero_s3_bucket_name = config.require("velero_s3_bucket_name")
+velero_s3_bucket_name = f"{project_name}-s3"
 
 
 # ==============================================================================
