@@ -21,7 +21,7 @@ existing_private_subnet_ids = config.require_object("existing_private_subnet_ids
 
 eks_cluster_version = config.get("eks_cluster_version") or "1.33"
 eks_cloudwatch_observability_version = config.get("eks_cloudwatch_observability_version") or "v4.3.1-eksbuild.1"
-eks_ebs_csi_driver_version = config.get("eks_ebs_csi_driver_version") or "v1.44.0-eksbuild.1"
+eks_ebs_csi_driver_version = config.get("eks_ebs_csi_driver_version") or "v1.47.0-eksbuild.1"
 eks_efs_csi_driver_version = config.get("eks_efs_csi_driver_version") or " 3.1.9"
 eks_volume_snapshotter_version = config.get("eks_volume_snapshotter_version") or "4.1.0"
 eks_cert_manager_version = config.get("eks_cert_manager_version") or "v1.18.0"
@@ -31,6 +31,7 @@ eks_aws_load_balancer_controller_version = config.get("eks_aws_load_balancer_con
 # eks_velero_aws_plugin_version = config.require("eks_velero_aws_plugin_version")
 route53_hosted_zone_id = config.require("route53_hosted_zone_id")
 external_dns_domains = config.require_object("external_dns_domains")
+eks_nodegroup_instance_types = config.get_object("eks_nodegroup_instance_types") or ["m5.large"]
 
 
 eks_efs_protect = config.get_bool("eks_efs_protect") if config.get("eks_efs_protect") is not None else True
@@ -89,6 +90,7 @@ node_config = {
     "max_count": config.get_int("eks_node_max_count") or 3,
 }
 
+velero_s3_bucket_name = f"{project_name}-s3"
 
 vpc = aws.ec2.get_vpc(id=existing_vpc_id)
 
@@ -194,13 +196,70 @@ k8s_provider = k8s.Provider(f"{project_name}-k8s-provider", kubeconfig=kubeconfi
 # --- MANAGED NODE GROUPS (Following Official Pulumi Pattern) ---
 # ==============================================================================
 
-# 1. Create the primary node group that replaces the old "default" one.
-#    It will automatically use the cluster's shared security group.
+# --- Launch Template for the Primary Node Group ---
+primary_ng_launch_template = aws.ec2.LaunchTemplate(f"{project_name}-primary-ng-lt",
+    name_prefix=f"{project_name}-primary-ng-lt-",
+    
+    # Define the instance type within the launch template
+    instance_type=node_config["instance_types"][0], # Assumes the first instance type in the list
+    
+    # Define the disk size within the launch template using block_device_mappings
+    block_device_mappings=[aws.ec2.LaunchTemplateBlockDeviceMappingArgs(
+        device_name="/dev/xvda", # The root device name for Amazon Linux 2
+        ebs=aws.ec2.LaunchTemplateBlockDeviceMappingEbsArgs(
+            volume_size=90,      # Set the desired disk size here
+            volume_type="gp3",   # It's good practice to specify gp3
+            delete_on_termination=True,
+        ),
+    )],
+    
+    # Enable detailed monitoring
+    monitoring=aws.ec2.LaunchTemplateMonitoringArgs(
+        enabled=True,
+    ),
+    
+    tags=create_common_tags("primary-ng-lt")
+)
+
+# --- Launch Template for the Second (m5.large) Node Group ---
+second_ng_launch_template = aws.ec2.LaunchTemplate(f"{project_name}-m5-large-ng-lt",
+    name_prefix=f"{project_name}-m5-large-ng-lt-",
+    
+    # Define this group's specific instance type
+    instance_type=eks_nodegroup_instance_types[0], # Assumes the first instance type in the list
+
+    # Define the disk size for this group as well
+    block_device_mappings=[aws.ec2.LaunchTemplateBlockDeviceMappingArgs(
+        device_name="/dev/xvda",
+        ebs=aws.ec2.LaunchTemplateBlockDeviceMappingEbsArgs(
+            volume_size=90,
+            volume_type="gp3",
+            delete_on_termination=True,
+        ),
+    )],
+    
+    monitoring=aws.ec2.LaunchTemplateMonitoringArgs(
+        enabled=True,
+    ),
+    
+    tags=create_common_tags("m5-large-ng-lt")
+)
+
+
+# 1. Update the primary node group to use its dedicated launch template.
 primary_node_group = eks.ManagedNodeGroup(f"{project_name}-primary-ng",
-    cluster=eks_cluster, # Associate with our cluster
+    cluster=eks_cluster,
     node_group_name=f"{project_name}-primary-nodes",
-    node_role=eks_node_instance_role, # Use the role you already defined
-    instance_types=node_config["instance_types"],
+    node_role=eks_node_instance_role,
+    
+    # REMOVED: instance_types and disk_size are now in the launch template.
+    
+    # Associate the custom launch template.
+    launch_template=aws.eks.NodeGroupLaunchTemplateArgs(
+        id=primary_ng_launch_template.id,
+        version=primary_ng_launch_template.latest_version
+    ),
+    
     scaling_config=aws.eks.NodeGroupScalingConfigArgs(
         desired_size=node_config["desired_count"],
         min_size=node_config["min_count"],
@@ -214,26 +273,32 @@ primary_node_group = eks.ManagedNodeGroup(f"{project_name}-primary-ng",
     )
 )
 
-# 2. Create your second node group. It's now a simple, repeatable pattern.
-#    It will also automatically use the same shared security group.
-m5_large_node_group = eks.ManagedNodeGroup(f"{project_name}-m5-large-ng",
-    cluster=eks_cluster, # Associate with the SAME cluster
+# 2. Update the second node group to use its dedicated launch template.
+second_node_group = eks.ManagedNodeGroup(f"{project_name}-{eks_nodegroup_instance_types[0].replace(".", "-")}-ng",
+    cluster=eks_cluster,
     node_group_name=f"{project_name}-m5-large-nodes",
-    node_role=eks_node_instance_role, # Use the SAME role
-    instance_types=["m5.large"],
+    node_role=eks_node_instance_role,
+    
+    # REMOVED: instance_types and disk_size are now in the launch template.
+
+    # Associate its own launch template.
+    launch_template=aws.eks.NodeGroupLaunchTemplateArgs(
+        id=second_ng_launch_template.id,
+        version=second_ng_launch_template.latest_version
+    ),
+    
     scaling_config=aws.eks.NodeGroupScalingConfigArgs(
         desired_size=node_config["desired_count"],
         min_size=node_config["min_count"],
         max_size=node_config["max_count"],
     ),
     subnet_ids=existing_private_subnet_ids,
-    labels={"workload-type": "general-purpose", "instance-type": "m5-large"},
-    tags=create_common_tags("m5-large-ng"),
+    labels={"workload-type": "general-purpose", "instance-type": eks_nodegroup_instance_types[0].replace(".", "-")},
+    tags=create_common_tags(f"{eks_nodegroup_instance_types[0].replace(".", "-")}-ng"),
     opts=pulumi.ResourceOptions(
         depends_on=[eks_cluster]
     )
 )
-
 
 
 
@@ -796,43 +861,55 @@ external_dns_chart = Chart("external-dns",
 
 
 
-# 1. Create a dedicated Security Group for the EFS file system.
+# 1. Create a dedicated Security Group for the EFS file system with NO inline rules.
 efs_security_group = aws.ec2.SecurityGroup(f"{project_name}-efs-sg",
-    vpc_id=vpc.vpc_id,
+    vpc_id=vpc.id, # Corrected to use vpc.id from your existing code
     description="Allow NFS traffic from EKS nodes to EFS",
-    tags=create_common_tags("efs-sg"),
-    # Define the crucial ingress rule inline.
-    ingress=[{
-            "protocol":"tcp",
-            "from_port":2049, # NFS port
-            "to_port":2049,
-            # This is the key: it allows traffic ONLY from the worker nodes.
-            "security_groups": [eks_cluster.node_security_group_id],
-            "description":"Allow NFS from EKS worker nodes"
-    }],
-
+    tags=create_common_tags("efs-sg")
 )
 
-# 2. Create the EFS File System.
+# 2. Create a standalone Ingress Rule to allow traffic from the EKS node security group.
+efs_ingress_rule = aws.vpc.SecurityGroupIngressRule(f"{project_name}-efs-ingress-rule",
+    security_group_id=efs_security_group.id,
+    description="Allow NFS from EKS worker nodes",
+    ip_protocol="tcp",
+    from_port=2049,  # NFS port
+    to_port=2049,
+    referenced_security_group_id=eks_cluster.node_security_group_id
+)
+
+# 3. Create the EFS File System.
 efs_file_system = aws.efs.FileSystem(f"{project_name}-efs",
     tags=create_common_tags("efs"),
-    # Adding protect is wise for production EFS file systems.
     opts=pulumi.ResourceOptions(protect=eks_efs_protect)
 )
 
-
-# 3. Create the EFS Mount Targets in each private subnet.
-#    This now uses the dedicated EFS security group.
+# 4. Create the EFS Mount Targets in each private subnet.
+#    This now correctly uses the dedicated EFS security group.
 efs_mount_targets = []
 for i, subnet_id in enumerate(existing_private_subnet_ids):
     mount_target = aws.efs.MountTarget(
         f"{project_name}-efs-mount-{i}",
         file_system_id=efs_file_system.id,
         subnet_id=subnet_id,
-        # eks_cluster.node_security_group is a convenient output from the high-level eks.Cluster component
-        security_groups=[efs_security_group.id]
+        security_groups=[efs_security_group.id],
+        # Add a dependency to ensure the ingress rule is created before the mount target
+        opts=pulumi.ResourceOptions(depends_on=[efs_ingress_rule])
     )
     efs_mount_targets.append(mount_target)
+
+# # 3. Create the EFS Mount Targets in each private subnet.
+# #    This now uses the dedicated EFS security group.
+# efs_mount_targets = []
+# for i, subnet_id in enumerate(existing_private_subnet_ids):
+#     mount_target = aws.efs.MountTarget(
+#         f"{project_name}-efs-mount-{i}",
+#         file_system_id=efs_file_system.id,
+#         subnet_id=subnet_id,
+#         # eks_cluster.node_security_group is a convenient output from the high-level eks.Cluster component
+#         security_groups=[efs_security_group.id]
+#     )
+#     efs_mount_targets.append(mount_target)
 
 
 # This policy is sufficient for both controller and node components.
@@ -988,6 +1065,53 @@ cloudwatch_observability_addon = eks.Addon(f"{project_name}-cloudwatch-observabi
         ]
     )
 )
+
+
+
+
+
+# --- Velero for Backups ---
+# AMENDED: Changed from deprecated `BucketV2` to `Bucket`.
+velero_s3_bucket = aws.s3.Bucket(f"{project_name}-velero-backups",
+    bucket=velero_s3_bucket_name,
+    tags=create_common_tags("velero-backups"))
+aws.s3.BucketPublicAccessBlock(f"{project_name}-velero-backups-public-access",
+    bucket=velero_s3_bucket.id, block_public_acls=True, block_public_policy=True, ignore_public_acls=True, restrict_public_buckets=True)
+velero_iam_user = aws.iam.User(f"{project_name}-velero-user", name=f"{project_name}-velero")
+velero_policy_json = velero_s3_bucket.bucket.apply(lambda bucket_name: json.dumps({
+    "Version": "2012-10-17",
+    "Statement": [
+        {"Effect": "Allow", "Action": ["ec2:DescribeVolumes", "ec2:DescribeSnapshots", "ec2:CreateTags", "ec2:CreateVolume", "ec2:CreateSnapshot", "ec2:DeleteSnapshot"], "Resource": "*"},
+        {"Effect": "Allow", "Action": ["s3:GetObject", "s3:DeleteObject", "s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"], "Resource": [f"arn:aws:s3:::{bucket_name}/*"]},
+        {"Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": [f"arn:aws:s3:::{bucket_name}"]}
+    ]
+}))
+velero_iam_policy = aws.iam.Policy(f"{project_name}-velero-policy", name=f"{project_name}-VeleroBackupPolicy", policy=velero_policy_json)
+aws.iam.UserPolicyAttachment(f"{project_name}-velero-user-policy-attachment", user=velero_iam_user.name, policy_arn=velero_iam_policy.arn)
+velero_access_key = aws.iam.AccessKey(f"{project_name}-velero-access-key", user=velero_iam_user.name)
+velero_namespace = k8s.core.v1.Namespace("velero-ns", metadata={"name": "velero"}, opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[eks_cluster]))
+velero_secret = k8s.core.v1.Secret("velero-cloud-credentials",
+    metadata=k8s.meta.v1.ObjectMetaArgs(name="cloud-credentials", namespace=velero_namespace.metadata["name"]),
+    string_data={"cloud": pulumi.Output.all(id=velero_access_key.id, secret=velero_access_key.secret).apply(lambda args: f"[default]\naws_access_key_id={args['id']}\naws_secret_access_key={args['secret']}")},
+    type="Opaque",
+    opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[velero_namespace, velero_access_key], protect=eks_velero_protect))
+velero_chart = Chart(f"{project_name}-velero-chart",
+    ChartOpts(
+        chart="velero", version=eks_velero_version, fetch_opts=FetchOpts(repo="https://vmware-tanzu.github.io/helm-charts"),
+        namespace=velero_namespace.metadata["name"],
+        values={
+            "configuration": {
+                "backupStorageLocation": [{"name": "default", "provider": "aws", "bucket": velero_s3_bucket.bucket, "config": {"region": aws_region}}],
+                "volumeSnapshotLocation": [{"name": "default", "provider": "aws", "config": {"region": aws_region}}]
+            },
+            "credentials": {"useSecret": True, "existingSecret": velero_secret.metadata["name"]},
+            "snapshotsEnabled": True,
+            "initContainers": [{"name": "velero-plugin-for-aws", "image": "velero/velero-plugin-for-aws:v1.9.0", "imagePullPolicy": "IfNotPresent", "volumeMounts": [{"mountPath": "/target", "name": "plugins"}]}],
+            "metrics": {"enabled": False},
+            "deployNodeAgent": True,
+        }
+    ),
+    opts=pulumi.ResourceOptions(provider=k8s_provider, depends_on=[velero_secret, gp3_storage_class]))
 
 
 

@@ -1,0 +1,41 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pgadmin-ingress
+  namespace: tools
+  annotations:
+    # alb.ingress.kubernetes.io/group.name: "mmh-sg-iha-alb" 
+    alb.ingress.kubernetes.io/scheme: internal
+    # This defines the type of traffic the ALB will listen for
+    alb.ingress.kubernetes.io/target-type: ip
+
+
+    # pgadmin.dev-app.mmh-global.com
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:806342426990:certificate/a96e8684-0044-4054-8894-adab62fa510f
+    
+    # pgadmin.app.mmh-global.com
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:353654036991:certificate/ad30f443-26b1-465f-a633-d9e480913bcd
+
+
+    # cert-manager.io/cluster-issuer: letsencrypt-staging
+    # cert-manager.io/cluster-issuer: aws-public-issuer
+    alb.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    alb.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/healthcheck-path: /misc/ping
+spec:
+  ingressClassName: alb
+  rules:
+    - host: pgadmin.app.mmh-global.com # The hostname for the Ingress
+      http:
+        paths:
+          - path: /
+            pathType: Prefix # Use Prefix to match all paths starting with /pgadmin
+            backend:
+              service:
+                name: pgadmin-svc
+                port:
+                  number: 80

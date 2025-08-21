@@ -19,6 +19,8 @@ config:
   eks_infra:eks_node_instance_types:           
     # - t3.medium
     - m5.large
+  eks_infra:eks_nodegroup_instance_types:
+    - m5.large
   eks_infra:eks_node_desired_count: "1"        
   eks_infra:eks_node_min_count: "1"            
   eks_infra:eks_node_max_count: "4"            
@@ -31,7 +33,7 @@ config:
   eks_infra:eks_cert_manager_version: v1.18.0  
   eks_infra:eks_velero_version: 10.0.4
   eks_infra:eks_velero_aws_plugin_version: v1.10.0
-  eks_infra:eks_aws_load_balancer_controller_version: 1.13.2
+  eks_infra:eks_aws_load_balancer_controller_version: 1.13.4
   # 1.7.2  
   # 1.13.2
   eks_infra:eks_cluster_autoscaler_version: 9.46.6

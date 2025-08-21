@@ -1,0 +1,27 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ebs-retain-sc # You can name it anything you like
+allowVolumeExpansion: true 
+provisioner: ebs.csi.aws.com 
+# provisioner: kubernetes.io/aws-ebs # For CSI driver
+parameters:
+  type: gp3 # Or gp2, io1, etc. based on your needs
+  fsType: ext4
+reclaimPolicy: Retain # <-- THIS IS THE IMPORTANT PART FOR DATA PROTECTION
+volumeBindingMode: WaitForFirstConsumer # Recommended for EBS
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-retain-sc # You can name it anything you like
+allowVolumeExpansion: true 
+provisioner: efs.csi.aws.com # For CSI driver
+parameters:
+  directoryPerms: "700"
+  # fileSystemId: fs-0e67359b3ce9b0ea6
+  fileSystemId: fs-0f94faea9f511e647
+  provisioningMode: efs-ap
+reclaimPolicy: Retain # <-- THIS IS THE IMPORTANT PART FOR DATA PROTECTION
+volumeBindingMode: WaitForFirstConsumer  # Recommended for EBS

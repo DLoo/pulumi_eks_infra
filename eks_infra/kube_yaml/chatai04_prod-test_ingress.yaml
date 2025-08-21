@@ -12,8 +12,8 @@ metadata:
     # Give this rule a lower priority so the ACME rule is checked first.
     # "alb.ingress.kubernetes.io/group.order": "10"
     # This defines the scheme of the load balancer
-    # alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    # alb.ingress.kubernetes.io/scheme: internal
     # This defines the type of traffic the ALB will listen for
     alb.ingress.kubernetes.io/target-type: ip
     # Associates our AWS WAF WebACL with the Application Load Balancer.
@@ -29,8 +29,6 @@ metadata:
     
     # chatai.app.mmh-global.com
     # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:353654036991:certificate/4c0acb82-10e5-4bb9-ba83-8a71a75bdf2e
-    # chatai.app.musimmas.com
-    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:353654036991:certificate/51abcc7a-d9a3-4da7-86f8-8c48cd06d041
     
 
     alb.ingress.kubernetes.io/proxy-read-timeout: "33600"
@@ -48,7 +46,6 @@ spec:
     # - host: k8s-chatai-openwebu-dfd767cdbf-1006398550.ap-southeast-1.elb.amazonaws.com
     # - host: chatai.app.mmh-global.com # The hostname for the Ingress
     # - host: chatai.app.mmh-global.com # The hostname for the Ingress
-    # - host: chatai.app.musimmas.com # The hostname for the Ingress
     - http:
         paths:
           - path: /

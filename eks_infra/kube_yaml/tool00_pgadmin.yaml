@@ -4,16 +4,16 @@ metadata:
   name: tools # Or any namespace you prefer for pgAdmin
 
 
----
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: efs-retain-sc # You can name it anything you like
-allowVolumeExpansion: true 
-provisioner: efs.csi.aws.com # For CSI driver
-parameters:
-  directoryPerms: "700"
-  fileSystemId: fs-0c70488bb910b64ec
-  provisioningMode: efs-ap
-reclaimPolicy: Retain # <-- THIS IS THE IMPORTANT PART FOR DATA PROTECTION
-volumeBindingMode: WaitForFirstConsumer  # Recommended for EBS
+# ---
+# apiVersion: storage.k8s.io/v1
+# kind: StorageClass
+# metadata:
+#   name: efs-retain-sc # You can name it anything you like
+# allowVolumeExpansion: true 
+# provisioner: efs.csi.aws.com # For CSI driver
+# parameters:
+#   directoryPerms: "700"
+#   fileSystemId: fs-0c70488bb910b64ec
+#   provisioningMode: efs-ap
+# reclaimPolicy: Retain # <-- THIS IS THE IMPORTANT PART FOR DATA PROTECTION
+# volumeBindingMode: WaitForFirstConsumer  # Recommended for EBS

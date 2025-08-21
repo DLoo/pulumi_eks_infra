@@ -88,6 +88,30 @@ spec:
                 secretKeyRef:
                   name: postgres-credentials
                   key: POSTGRES_DB
+            - name: WEBUI_NAME
+              value: "MMH Chat-AI App"
+            - name: WEBUI_BANNERS
+              value: "[{\"id\": \"1\", \"type\": \"warning\", \"title\": \"Employee Guidance.\", \"content\": \"For work use only. Do not input confidential data. Verify all AI output for accuracy before use.\", \"dismissible\": true, \"timestamp\": 1000}]"
+            - name: ENABLE_CODE_EXECUTION
+              value: "False"
+            - name: ENABLE_CODE_INTERPRETER
+              value: "False"
+            - name: ENABLE_EVALUATION_ARENA_MODELS
+              value: "False"
+            - name: ENABLE_VERSION_UPDATE_CHECK
+              value: "False"
+            - name: USER_PERMISSIONS_CHAT_TEMPORARY
+              value: "False"
+            - name: USER_PERMISSIONS_WORKSPACE_MODELS_ACCESS
+              value: "False"
+            - name: ENABLE_OLLAMA_API
+              value: "False"
+            - name: ENABLE_OPENAI_API
+              value: "False"
+
+            - name: DEFAULT_PROMPT_SUGGESTIONS
+              value: "[{\"title\": [\"Grammar check\", \"rewrite it for better reads\"], \"content\": \"Check the following sentence for grammar and clarity: '[sentence]'.Rewrite it for better readability while maintaining its original meaning.\"},  {\"title\": [\"Expand on an Idea\", \"develop initial thoughts into more fleshed-out concepts\"], \"content\": \"I have the following basic idea: '[idea]'.  Expand on this idea, providing supporting details and potential implications. Assume the audience has [audience level of understanding].\"}, {\"title\": [\"Summarise a document\", \"focus on the key findiings\"], \"content\": \"Summarise the following document/article/report: '[text/URL]'.  Focus on the key findings and recommendations, no more than [number] sentences.\"},  {\"title\": [\"Translate a text\", \"translate it to another language\"], \"content\": \"Translate the following text into [language]: '[text]'.  Ensure the translation maintains the original meaning and tone.\"}, {\"title\": [\"Generate a list of ideas\", \"brainstorming session\"], \"content\": \"Brainstorm a list of [number] ideas related to the topic: '[topic]'.  Focus on creative and innovative solutions.\"},   {\"title\": [\"Create a plan\", \"step-by-step guide\"], \"content\": \"Create a step-by-step plan for achieving the following goal: '[goal]'.  Include specific actions, timelines, and resources needed.\"}]"
+            
           # volumeMounts:
           #   # - name: ebs-storage # Mount the EBS volume
           #   #   mountPath: /data/ebs
@@ -102,18 +126,18 @@ spec:
               memory: 4Gi
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /health
               port: http
             initialDelaySeconds: 120
             periodSeconds: 10
             failureThreshold: 5
-          readinessProbe:
-            httpGet:
-              path: /healthz
-              port: http
-            initialDelaySeconds: 90
-            periodSeconds: 5
-            successThreshold: 1
+          # readinessProbe:
+          #   httpGet:
+          #     path: /health
+          #     port: http
+          #   initialDelaySeconds: 90
+          #   periodSeconds: 5
+          #   successThreshold: 1
       # volumes:
       #   # - name: ebs-storage
       #   #   persistentVolumeClaim:
