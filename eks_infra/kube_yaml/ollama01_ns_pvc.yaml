@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ollama 
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-efs-pvc
+  namespace: ollama
+spec:
+  accessModes:
+    - ReadWriteMany # The key feature of EFS 
+  resources:
+    requests:
+      storage: 150Gi
+  storageClassName: efs-retain-sc 
+
+

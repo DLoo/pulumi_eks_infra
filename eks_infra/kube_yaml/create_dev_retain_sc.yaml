@@ -21,7 +21,7 @@ provisioner: efs.csi.aws.com # For CSI driver
 parameters:
   directoryPerms: "700"
   # fileSystemId: fs-0e67359b3ce9b0ea6
-  fileSystemId: fs-0dccf8ddd0eef1bda
+  fileSystemId: fs-08a250bbed563e507
   provisioningMode: efs-ap
 reclaimPolicy: Retain # <-- THIS IS THE IMPORTANT PART FOR DATA PROTECTION
 volumeBindingMode: WaitForFirstConsumer  # Recommended for EBS

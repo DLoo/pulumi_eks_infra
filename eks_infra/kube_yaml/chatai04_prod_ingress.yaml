@@ -23,12 +23,12 @@ metadata:
     # cert-manager.io/cluster-issuer: letsencrypt-staging
     # For production, you'll change it to:
     # cert-manager.io/cluster-issuer: letsencrypt-prod
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]' # Ensure ALB listens on 443
-    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]' # Ensure ALB listens on 443
-    # alb.ingress.kubernetes.io/ssl-redirect: '443' # Optional: Redirect HTTP to HTTPS
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]' # Ensure ALB listens on 443
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]' # Ensure ALB listens on 443
+    alb.ingress.kubernetes.io/ssl-redirect: '443' # Optional: Redirect HTTP to HTTPS
     
     # chatai.app.mmh-global.com
-    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:353654036991:certificate/4c0acb82-10e5-4bb9-ba83-8a71a75bdf2e
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:353654036991:certificate/863439db-c6a1-4231-b8ac-0af6ad671384
     # chatai.app.musimmas.com
     # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:353654036991:certificate/51abcc7a-d9a3-4da7-86f8-8c48cd06d041
     
@@ -47,9 +47,10 @@ spec:
   rules:
     # - host: k8s-chatai-openwebu-dfd767cdbf-1006398550.ap-southeast-1.elb.amazonaws.com
     # - host: chatai.app.mmh-global.com # The hostname for the Ingress
-    # - host: chatai.app.mmh-global.com # The hostname for the Ingress
+    - host: chatai.app.mmh-global.com # The hostname for the Ingress
     # - host: chatai.app.musimmas.com # The hostname for the Ingress
-    - http:
+    # - http:
+      http:
         paths:
           - path: /
             pathType: Prefix

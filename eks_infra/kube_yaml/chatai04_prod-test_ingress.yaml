@@ -45,7 +45,6 @@ spec:
   rules:
     # - host: k8s-chatai-openwebu-dfd767cdbf-1006398550.ap-southeast-1.elb.amazonaws.com
     # - host: chatai.app.mmh-global.com # The hostname for the Ingress
-    # - host: chatai.app.mmh-global.com # The hostname for the Ingress
     - http:
         paths:
           - path: /

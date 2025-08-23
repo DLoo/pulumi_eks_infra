@@ -1,0 +1,97 @@
+# Specifies the API version for the Deployment object.
+apiVersion: apps/v1
+# Specifies the type of Kubernetes object to create.
+kind: Deployment
+# Contains metadata about the Deployment.
+metadata:
+  # The name of the Deployment.
+  name: docling-deployment
+  namespace: chatai
+  # Labels for this Deployment.
+  labels:
+    app: docling
+# 'spec' is where you define the desired state of the Deployment.
+spec:
+  # The number of pod replicas to maintain.
+  replicas: 1
+  # 'selector' tells the Deployment which pods to manage. It must match the labels of the pod template.
+  selector:
+    matchLabels:
+      app: docling
+  # 'template' is the blueprint for the pods that the Deployment will create.
+  template:
+    metadata:
+      # These labels are applied to each pod, allowing the selector to find them.
+      labels:
+        app: docling
+    spec:
+      nodeSelector:
+        "nvidia.com/gpu": "true"
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      # 'containers' is a list of one or more containers to run inside each pod.
+      containers:
+      - name: docling-container
+        # The container image to pull and run.
+        # gpu support 
+        image: quay.io/docling-project/docling-serve-cu124
+        # image: quay.io/docling-project/docling-serve:latest
+        # 'ports' lists the network ports to expose from the container.
+        ports:
+        - containerPort: 5001
+        # 'env' allows you to set environment variables inside the container.
+        env:
+        - name: DOCLING_SERVE_ENABLE_UI
+          value: "true"
+        - name: DOCLING_SERVE_ENABLE_REMOTE_SERVICES
+          value: "true"
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        - name: DOCLING_SERVE_MAX_DOCUMENT_TIMEOUT
+          value: "800"
+        - name: DOCLING_SERVE_MAX_SYNC_WAIT
+          value: "600"
+        # --- OCR Configuration ---
+        # Specify the languages for OCR processing.
+        # Use 3-letter ISO 639-2/T codes. You can add more, separated by commas.
+        # For example: "eng,fra,spa" for English, French, and Spanish.
+        # - name: DOCLING_OCR_LANGUAGES
+          # value: "eng,deu"
+        # 'resources' specifies the CPU and memory requirements for the container.
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+
+---
+# This section defines the Service. A '---' separator is used to include multiple Kubernetes objects in one file.
+
+# Specifies the API version for the Service object.
+apiVersion: v1
+# Specifies the type of Kubernetes object to create.
+kind: Service
+# Contains metadata about the Service.
+metadata:
+  # The name of the Service.
+  name: docling-service
+  namespace: chatai
+# 'spec' defines the desired state of the Service.
+spec:
+  # 'type' determines how the Service is exposed. ClusterIP is the default and exposes the service on an internal IP in the cluster.
+  type: ClusterIP
+  # 'selector' is used to find the pods that this service will route traffic to. It must match the labels of the pods.
+  selector:
+    app: docling
+  # 'ports' lists the port mappings for the Service.
+  ports:
+  - protocol: TCP
+    # The port on the Service itself. Other pods will connect to this port.
+    port: 5001
+    # The port on the pods that the Service will forward traffic to. This must match the containerPort.
+    targetPort: 5001

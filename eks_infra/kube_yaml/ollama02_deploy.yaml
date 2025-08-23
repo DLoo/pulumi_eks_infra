@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama-deployment
+  namespace: ollama
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      nodeSelector:
+        "nvidia.com/gpu": "true"
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      containers:
+        # - name: nvidia-sidecar
+        #   image: nvidia/cuda:12.8.1-base-ubuntu24.04
+        #   command: ["watch", "-d -n", "1", "nvidia-smi"]
+        #   resources:
+        #     requests:
+        #       cpu: 250m
+        #       memory: 1Gi
+        #     limits:
+        #       cpu: 500m
+        #       memory: 2Gi
+        - name: ollama
+          image: ollama/ollama:latest
+          env:
+            - name: PRELOAD_MODELS
+              value: "gemma3:12b"
+            - name: OLLAMA_KEEP_ALIVE
+              value: 200h
+            - name: OLLAMA_MAX_LOADED_MODELS
+              value: "1"
+            - name: OLLAMA_NUM_PARALLEL
+              value: "2"
+            - name: OLLAMA_LOAD_TIMEOUT
+              value: "900"
+          ports:
+            - containerPort: 11434
+              protocol: TCP
+          tty: true
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    for model in $(echo $PRELOAD_MODELS | tr ',' ' '); do
+                      echo "Running ollama pull $model"
+                      ollama pull $model
+                    done
+
+          volumeMounts:
+            - name: ollama-persistent-storage
+              mountPath: /root/.ollama
+      # restartPolicy: Always
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+              nvidia.com/gpu: 1
+            limits:
+              cpu: "3"
+              memory: 15Gi
+              nvidia.com/gpu: 1
+      volumes:
+        - name: ollama-persistent-storage
+          persistentVolumeClaim:
+            claimName: ollama-efs-pvc
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-svc
+  namespace: ollama
+spec:
+  type: ClusterIP
+  ports:
+    - name: ollama
+      port: 11434
+      targetPort: 11434
+  selector:
+    app: ollama
